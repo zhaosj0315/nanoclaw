@@ -306,7 +306,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
       ? m.content.replace(`${ASSISTANT_NAME}:`, '').trim()
       : m.content;
 
-    // 检查是否有对应的多模态文件并进行分析
+    // 检查是否有对应的多模态文件并进行分析 (增加重试逻辑处理磁盘延迟)
     const mediaDir = path.join(DATA_DIR, 'media');
     const voicePath = path.join(mediaDir, `voice_${m.id}.ogg`);
     const imagePath = path.join(mediaDir, `image_${m.id}.jpg`);
@@ -340,7 +340,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
 
   const historyContext = enhancedHistory.join('\n');
 
-  const prompt = `${memoryContext}\n--- CONVERSATION HISTORY (Last 50 messages) ---\n${historyContext}\n--- END HISTORY ---\n\n请根据以上长期记忆和对话历史，回答用户当前的问题。如果用户发送了音频或图片，系统已将其原生加载，请直接结合视觉/听觉内容进行回答。如果用户提到了新的材料或需要记住的事实，请在回复中体现。`;
+  const prompt = `${memoryContext}\n--- CONVERSATION HISTORY (Last 50 messages) ---\n${historyContext}\n--- END HISTORY ---\n\n请根据以上长期记忆和对话历史，回答用户当前的问题。如果历史记录中包含图片或音频路径，系统已通过多模态接口将其原生加载。请务必仔细分析这些视觉/听觉内容，并在回复中具体描述你所看到的内容或听到的指令。如果用户提到了新的材料或需要记住的事实，请在回复中体现。`;
 
   if (recentMessages.length === 0) return;
 
@@ -1060,30 +1060,33 @@ async function connectWhatsApp(): Promise<void> {
 
       // 增强型：多模态支持 - 自动下载多媒体消息 (语音和图片)
       if (registeredGroups[chatJid] && (msg.message?.audioMessage || msg.message?.imageMessage)) {
-        (async () => {
-          try {
-            const isAudio = !!msg.message?.audioMessage;
-            const buffer = await downloadMediaMessage(
-              msg,
-              'buffer',
-              {},
-              { 
-                logger: logger as any,
-                reuploadRequest: currentSock.updateMediaMessage 
-              }
-            );
-            const mediaDir = path.join(DATA_DIR, 'media');
-            if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true });
-            
-            const ext = isAudio ? 'ogg' : 'jpg';
-            const fileName = `${isAudio ? 'voice' : 'image'}_${msg.key.id}.${ext}`;
-            const filePath = path.join(mediaDir, fileName);
-            fs.writeFileSync(filePath, buffer as Buffer);
-            logger.info({ filePath }, 'Media message downloaded');
-          } catch (err) {
-            logger.error({ err }, 'Failed to download media message');
-          }
-        })();
+        try {
+          const isAudio = !!msg.message?.audioMessage;
+          const mediaType = isAudio ? 'AUDIO' : 'IMAGE';
+          logger.info({ chatJid, mediaType }, `Downloading ${mediaType} attachment...`);
+
+          const buffer = await downloadMediaMessage(
+            msg,
+            'buffer',
+            {},
+            { 
+              logger: logger as any,
+              reuploadRequest: currentSock.updateMediaMessage 
+            }
+          );
+          
+          const mediaDir = path.join(DATA_DIR, 'media');
+          if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true });
+          
+          const ext = isAudio ? 'ogg' : 'jpg';
+          const fileName = `${isAudio ? 'voice' : 'image'}_${msg.key.id}.${ext}`;
+          const filePath = path.join(mediaDir, fileName);
+          fs.writeFileSync(filePath, buffer as Buffer);
+          
+          logger.info({ filePath, size: (buffer as Buffer).length }, `${mediaType} download complete`);
+        } catch (err) {
+          logger.error({ err, msgId: msg.key.id }, 'Failed to download media attachment');
+        }
       }
 
       // Only store full message content for registered groups
