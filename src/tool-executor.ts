@@ -1,4 +1,4 @@
-import { exec } from 'child_process';
+import { exec, execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { logger } from './logger.js';
@@ -10,10 +10,12 @@ export interface ToolResult {
 }
 
 export interface ParsedCommand {
-  type: 'shell' | 'write';
+  type: 'shell' | 'write' | 'send_file' | 'search_knowledge' | 'list_knowledge' | 'tts_send';
   command?: string;
   path?: string;
   content?: string;
+  query?: string;
+  text?: string;
 }
 
 /**
@@ -57,6 +59,10 @@ export async function executeTools(
 ): Promise<{ newText: string; results: ToolResult[]; commands: ParsedCommand[] }> {
   const shellRegex = /\[SHELL:\s*(.+?)\]/g;
   const writeRegex = /\[WRITE:\s*(.+?)\s*\|\s*([\s\S]+?)\]/g;
+  const sendFileRegex = /\[SEND_FILE:\s*(.+?)\]/g;
+  const searchKnowledgeRegex = /\[SEARCH_KNOWLEDGE:\s*(.+?)\]/g;
+  const listKnowledgeRegex = /\[LIST_KNOWLEDGE\]/g;
+  const ttsSendRegex = /\[TTS_SEND:\s*([\s\S]+?)\]/g;
 
   const results: ToolResult[] = [];
   const commands: ParsedCommand[] = [];
@@ -105,6 +111,80 @@ export async function executeTools(
       const result = await writeFile(filePath, content);
       results.push(result);
     }
+  }
+
+  // 处理 SEND_FILE 指令
+  while ((match = sendFileRegex.exec(text)) !== null) {
+    const filePath = match[1];
+    commands.push({ type: 'send_file', path: filePath });
+
+    const check = isPathAuthorized(filePath);
+    if (!check.authorized) {
+      logger.warn({ filePath }, 'Blocked unauthorized file send');
+      results.push({ success: false, output: `[SECURITY REJECTED] ${check.reason}` });
+    } else {
+      logger.info({ filePath }, 'AI requested to send file');
+      if (fs.existsSync(filePath)) {
+        results.push({ success: true, output: `Successfully queued ${filePath} for sending.` });
+      } else {
+        results.push({ success: false, output: `File not found: ${filePath}` });
+      }
+    }
+  }
+
+  // 处理 SEARCH_KNOWLEDGE 指令
+  while ((match = searchKnowledgeRegex.exec(text)) !== null) {
+    const query = match[1];
+    commands.push({ type: 'search_knowledge', query });
+    logger.info({ query }, 'Searching knowledge base');
+
+    try {
+      const kbPath = path.join(process.cwd(), 'data', 'knowledge_base');
+      if (!fs.existsSync(kbPath)) fs.mkdirSync(kbPath, { recursive: true });
+
+      // 使用 grep 进行全文本搜索，返回匹配行及前后 2 行上下文
+      const searchCmd = `grep -r -i -C 2 "${query.replace(/"/g, '\\"')}" "${kbPath}" | head -n 20`;
+      const output = execSync(searchCmd, { encoding: 'utf-8' });
+      
+      results.push({ 
+        success: true, 
+        output: output || `在知识库中未找到与 "${query}" 相关的结果。` 
+      });
+    } catch (err: any) {
+      results.push({ 
+        success: true, 
+        output: `未找到匹配 "${query}" 的文档内容。` 
+      });
+    }
+  }
+
+  // 处理 LIST_KNOWLEDGE 指令
+  while ((match = listKnowledgeRegex.exec(text)) !== null) {
+    commands.push({ type: 'list_knowledge' });
+    logger.info('Listing knowledge base files');
+
+    try {
+      const kbPath = path.join(process.cwd(), 'data', 'knowledge_base');
+      if (!fs.existsSync(kbPath)) fs.mkdirSync(kbPath, { recursive: true });
+
+      const files = fs.readdirSync(kbPath).filter(f => !f.startsWith('.'));
+      if (files.length === 0) {
+        results.push({ success: true, output: '知识库目前是空的。' });
+      } else {
+        const fileList = files.map((f, i) => `${i + 1}. ${f}`).join('\n');
+        results.push({ success: true, output: `知识库文件清单：\n${fileList}` });
+      }
+    } catch (err: any) {
+      results.push({ success: false, output: `无法读取知识库目录: ${err.message}` });
+    }
+  }
+
+  // 处理 TTS_SEND 指令
+  while ((match = ttsSendRegex.exec(text)) !== null) {
+    const ttsText = match[1];
+    commands.push({ type: 'tts_send', text: ttsText });
+    logger.info({ length: ttsText.length }, 'AI requested TTS voice send');
+    results.push({ success: true, output: '语音消息已加入发送队列。' });
   }
 
   return { newText: text, results, commands };

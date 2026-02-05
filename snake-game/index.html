@@ -215,51 +215,102 @@
             const head = snake[0];
             const target = goldenFood || food;
             
-            // BFS to find path to target
-            const queue = [[head, []]];
-            const visited = new Set();
-            visited.add(`${head.x},${head.y}`);
-
-            while (queue.length > 0) {
-                const [curr, path] = queue.shift();
-
+            // A* Algorithm
+            const openSet = [{
+                x: head.x, 
+                y: head.y, 
+                g: 0, 
+                h: Math.abs(head.x - target.x) + Math.abs(head.y - target.y),
+                f: Math.abs(head.x - target.x) + Math.abs(head.y - target.y),
+                path: []
+            }];
+            const closedSet = new Set();
+            
+            while (openSet.length > 0) {
+                // Get node with lowest f score
+                openSet.sort((a, b) => a.f - b.f);
+                const curr = openSet.shift();
+                
                 if (curr.x === target.x && curr.y === target.y) {
-                    return path[0]; // Next move
+                    return curr.path[0];
                 }
-
+                
+                closedSet.add(`${curr.x},${curr.y}`);
+                
                 const neighbors = [
-                    {x: curr.x, y: curr.y - 1, dir: 'up'},
-                    {x: curr.x, y: curr.y + 1, dir: 'down'},
-                    {x: curr.x - 1, y: curr.y, dir: 'left'},
-                    {x: curr.x + 1, y: curr.y, dir: 'right'}
+                    {x: curr.x, y: curr.y - 1, dx: 0, dy: -1},
+                    {x: curr.x, y: curr.y + 1, dx: 0, dy: 1},
+                    {x: curr.x - 1, y: curr.y, dx: -1, dy: 0},
+                    {x: curr.x + 1, y: curr.y, dx: 1, dy: 0}
                 ];
-
+                
                 for (const next of neighbors) {
-                    if (next.x >= 0 && next.x < tileCount && next.y >= 0 && next.y < tileCount &&
-                        !snake.some(s => s.x === next.x && s.y === next.y) &&
-                        !obstacles.some(o => o.x === next.x && o.y === next.y) &&
-                        !visited.has(`${next.x},${next.y}`)) {
-                        visited.add(`${next.x},${next.y}`);
-                        queue.push([next, [...path, {dx: next.x - curr.x, dy: next.y - curr.y}]]);
+                    if (next.x < 0 || next.x >= tileCount || next.y < 0 || next.y >= tileCount) continue;
+                    if (snake.some(s => s.x === next.x && s.y === next.y)) continue;
+                    if (obstacles.some(o => o.x === next.x && o.y === next.y)) continue;
+                    if (closedSet.has(`${next.x},${next.y}`)) continue;
+                    
+                    const g = curr.g + 1;
+                    const h = Math.abs(next.x - target.x) + Math.abs(next.y - target.y);
+                    const f = g + h;
+                    
+                    const existing = openSet.find(o => o.x === next.x && o.y === next.y);
+                    if (existing) {
+                        if (g < existing.g) {
+                            existing.g = g;
+                            existing.f = f;
+                            existing.path = [...curr.path, {dx: next.dx, dy: next.dy}];
+                        }
+                    } else {
+                        openSet.push({
+                            x: next.x, 
+                            y: next.y, 
+                            g: g, 
+                            h: h, 
+                            f: f, 
+                            path: [...curr.path, {dx: next.dx, dy: next.dy}]
+                        });
                     }
                 }
             }
             
-            // If no path to target, just try to survive
+            // Survival Mode: If no path found, choose neighbor with most empty space (simple flood fill preview)
             const neighbors = [
                 {x: head.x, y: head.y - 1, dx: 0, dy: -1},
                 {x: head.x, y: head.y + 1, dx: 0, dy: 1},
                 {x: head.x - 1, y: head.y, dx: -1, dy: 0},
                 {x: head.x + 1, y: head.y, dx: 1, dy: 0}
             ];
-            for(const next of neighbors) {
-                if (next.x >= 0 && next.x < tileCount && next.y >= 0 && next.y < tileCount &&
-                    !snake.some(s => s.x === next.x && s.y === next.y) &&
-                    !obstacles.some(o => o.x === next.x && o.y === next.y)) {
-                    return next;
+            
+            let bestSurvivalMove = null;
+            let maxFreeSpace = -1;
+            
+            for (const move of neighbors) {
+                if (move.x >= 0 && move.x < tileCount && move.y >= 0 && move.y < tileCount &&
+                    !snake.some(s => s.x === move.x && s.y === move.y) &&
+                    !obstacles.some(o => o.x === move.x && o.y === move.y)) {
+                    
+                    // Count free neighbors as a proxy for "space"
+                    let freeSpace = 0;
+                    const checks = [
+                        {x: move.x+1, y: move.y}, {x: move.x-1, y: move.y},
+                        {x: move.x, y: move.y+1}, {x: move.x, y: move.y-1}
+                    ];
+                    for(const c of checks) {
+                        if(c.x >= 0 && c.x < tileCount && c.y >= 0 && c.y < tileCount &&
+                           !snake.some(s => s.x === c.x && s.y === c.y) &&
+                           !obstacles.some(o => o.x === c.x && o.y === c.y)) {
+                            freeSpace++;
+                        }
+                    }
+                    
+                    if (freeSpace > maxFreeSpace) {
+                        maxFreeSpace = freeSpace;
+                        bestSurvivalMove = move;
+                    }
                 }
             }
-            return null;
+            return bestSurvivalMove;
         }
 
         class Particle {

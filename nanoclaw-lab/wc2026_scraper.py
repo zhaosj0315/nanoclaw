@@ -6,6 +6,7 @@ import sys
 import os
 import json
 import time
+import pandas as pd
 
 class WorldCupScraper:
     def __init__(self, output_dir="data/wc2026"):
@@ -66,10 +67,13 @@ class WorldCupScraper:
     def save_results(self, all_articles):
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         
+        # Deduplicate by title
+        unique_articles = list({a['title']: a for a in all_articles}.values())
+        
         # Save JSON
         json_path = os.path.join(self.output_dir, f"news_{timestamp}.json")
         with open(json_path, 'w', encoding='utf-8') as f:
-            json.dump(all_articles, f, ensure_ascii=False, indent=2)
+            json.dump(unique_articles, f, ensure_ascii=False, indent=2)
             
         # Save Markdown Report
         md_path = os.path.join(self.output_dir, f"report_{timestamp}.md")
@@ -77,18 +81,26 @@ class WorldCupScraper:
             f.write(f"# 🐾 NanoClaw: World Cup 2026 Intelligence Report\n\n")
             f.write(f"**Generated at:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
             
-            # Deduplicate by title
-            unique_articles = {a['title']: a for a in all_articles}.values()
-            
             for i, article in enumerate(unique_articles, 1):
                 f.write(f"### {i}. {article['title']}\n")
                 f.write(f"- **Snippet:** {article.get('snippet', 'N/A')}\n")
                 f.write(f"- **Link:** [Read More]({article['link']})\n\n")
         
+        # Save Excel (Using pandas)
+        df = pd.DataFrame(unique_articles)
+        excel_path = os.path.join(self.output_dir, f"WorldCupNews_{timestamp}.xlsx")
+        df.to_excel(excel_path, index=False)
+        
+        # Also save a copy to the root for easy access
+        root_excel_path = f"Today_News_{datetime.datetime.now().strftime('%Y%m%d')}.xlsx"
+        df.to_excel(root_excel_path, index=False)
+
         print(f"\n✅ Reports saved:")
         print(f"   - JSON: {json_path}")
         print(f"   - Markdown: {md_path}")
-        return md_path
+        print(f"   - Excel: {excel_path}")
+        print(f"   - Root Excel: {root_excel_path}")
+        return json_path
 
     def fetch_news_yahoo(self, query="World Cup 2026 news"):
         print(f"[{datetime.datetime.now()}] 🟣 Fetching from Yahoo News: {query}")

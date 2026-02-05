@@ -129,6 +129,33 @@ function translateJid(jid: string): string {
   return jid;
 }
 
+/**
+ * 利用 macOS 原生 'say' 命令生成 AI 语音并转码
+ */
+async function generateTts(text: string): Promise<string | null> {
+  const ttsDir = path.join(DATA_DIR, 'tts');
+  if (!fs.existsSync(ttsDir)) fs.mkdirSync(ttsDir, { recursive: true });
+  
+  const tempAiff = path.join(ttsDir, `tts_${Date.now()}.aiff`);
+  const finalOgg = path.join(ttsDir, `tts_${Date.now()}.ogg`);
+  
+  try {
+    // 1. 使用 macOS say 生成高质量 AI 语音
+    // 去掉一些特殊字符以防命令注入
+    const safeText = text.replace(/[`"'$]/g, '').slice(0, 500); 
+    execSync(`say -v Ting-Ting "${safeText}" -o "${tempAiff}"`);
+    
+    // 2. 使用 ffmpeg 转码为 WhatsApp 兼容的 opus/ogg 格式
+    execSync(`ffmpeg -i "${tempAiff}" -c:a libopus -b:a 32k -v error -y "${finalOgg}"`);
+    
+    if (fs.existsSync(tempAiff)) fs.unlinkSync(tempAiff);
+    return finalOgg;
+  } catch (err) {
+    logger.error({ err }, 'TTS generation failed');
+    return null;
+  }
+}
+
 async function setTyping(jid: string, isTyping: boolean): Promise<void> {
   if (!sock) return;
   try {
@@ -269,6 +296,9 @@ async function processMessage(msg: NewMessage): Promise<void> {
     : '';
 
   // --- 预处理多模态上下文 ---
+  let hasUserAudio = false;
+  const activeMediaFiles: string[] = []; // 存储将要发给 Gemini 的文件路径
+
   const enhancedHistory = await Promise.all(recentMessages.map(async (m) => {
     const isBot = m.from_me || m.content.startsWith(`${ASSISTANT_NAME}:`);
     const sender = isBot ? 'ASSISTANT' : `USER(${m.sender_name})`;
@@ -279,22 +309,38 @@ async function processMessage(msg: NewMessage): Promise<void> {
     // 检查是否有对应的多模态文件并进行分析
     const mediaDir = path.join(DATA_DIR, 'media');
     const voicePath = path.join(mediaDir, `voice_${m.id}.ogg`);
-    // 这里未来可以扩展支持 image_${m.id}.jpg 等
+    const imagePath = path.join(mediaDir, `image_${m.id}.jpg`);
     
+    // 语音处理
     if (fs.existsSync(voicePath)) {
+      if (!isBot) {
+        hasUserAudio = true;
+        activeMediaFiles.push(voicePath);
+      }
       const analysis = await analyzeMedia(voicePath);
       if (analysis) {
         cleanContent += `\n[系统多模态分析: ${analysis.description}]`;
-        // 注意：由于 API 限制，我们暂时不让 AI 直接 read_file 音频，而是通过预分析告知内容
+      }
+    }
+
+    // 图片处理
+    if (fs.existsSync(imagePath)) {
+      if (!isBot) activeMediaFiles.push(imagePath);
+      const analysis = await analyzeMedia(imagePath);
+      if (analysis) {
+        cleanContent += `\n[系统视觉扫描: ${analysis.description}]`;
       }
     }
 
     return `[${m.timestamp}] ${sender}: ${cleanContent}`;
   }));
 
+  // 限制媒体文件数量，避免 API 负载过重（仅取最近的 3 个）
+  const finalMediaFiles = activeMediaFiles.slice(-3);
+
   const historyContext = enhancedHistory.join('\n');
 
-  const prompt = `${memoryContext}\n--- CONVERSATION HISTORY (Last 50 messages) ---\n${historyContext}\n--- END HISTORY ---\n\n请根据以上长期记忆和对话历史，回答用户当前的问题。如果用户发送了音频或图片，请参考[系统多模态分析]给出的描述进行回答。如果用户提到了新的材料或需要记住的事实，请在回复中体现。`;
+  const prompt = `${memoryContext}\n--- CONVERSATION HISTORY (Last 50 messages) ---\n${historyContext}\n--- END HISTORY ---\n\n请根据以上长期记忆和对话历史，回答用户当前的问题。如果用户发送了音频或图片，系统已将其原生加载，请直接结合视觉/听觉内容进行回答。如果用户提到了新的材料或需要记住的事实，请在回复中体现。`;
 
   if (recentMessages.length === 0) return;
 
@@ -302,10 +348,9 @@ async function processMessage(msg: NewMessage): Promise<void> {
     { 
       group: group.name, 
       user: msg.sender_name, 
-      contextSize: recentMessages.length,
-      memorySize: memories.length
+      mediaCount: finalMediaFiles.length
     },
-    'Processing message with memory and context',
+    'Processing message with native multimodal support',
   );
 
   // 1. 发送即时确认，避免用户焦虑
@@ -315,14 +360,25 @@ async function processMessage(msg: NewMessage): Promise<void> {
   const typingInterval = setInterval(() => setTyping(msg.chat_jid, true), 5000);
   await setTyping(msg.chat_jid, true);
 
-  const response = await runAgent(group, prompt, msg.chat_jid);
+  const response = await runAgent(group, prompt, msg.chat_jid, finalMediaFiles);
   
   clearInterval(typingInterval);
   await setTyping(msg.chat_jid, false);
 
   if (response) {
     lastAgentTimestamp[msg.chat_jid] = msg.timestamp;
-    await sendMessage(msg.chat_jid, `${ASSISTANT_NAME}: ${response}\n\n✅ 处理完毕。`);
+    
+    // 如果用户发的是语音，且回复长度适中，则生成语音回复
+    if (hasUserAudio && response.length < 500) {
+      const ttsPath = await generateTts(response);
+      if (ttsPath) {
+        await sendMessage(msg.chat_jid, response, { filePath: ttsPath, ptt: true });
+      } else {
+        await sendMessage(msg.chat_jid, `${ASSISTANT_NAME}: ${response}\n\n✅ 处理完毕。`);
+      }
+    } else {
+      await sendMessage(msg.chat_jid, `${ASSISTANT_NAME}: ${response}\n\n✅ 处理完毕。`);
+    }
 
     // --- 异步记忆提炼 (不阻塞回复) ---
     (async () => {
@@ -357,6 +413,7 @@ async function runAgent(
   group: RegisteredGroup,
   initialPrompt: string,
   chatJid: string,
+  mediaFiles: string[] = [],
 ): Promise<string | null> {
   const { executeTools } = await import('./tool-executor.js');
   let currentPrompt = initialPrompt;
@@ -374,7 +431,7 @@ async function runAgent(
 
     iterations++;
     try {
-      const result = await runLocalGemini(currentPrompt, group.name);
+      const result = await runLocalGemini(currentPrompt, group.name, mediaFiles);
 
       if (!result.success || !result.response) {
         logger.error(
@@ -390,22 +447,61 @@ async function runAgent(
       // 检查是否有工具调用
       const { results, commands } = await executeTools(responseText);
 
+      // --- 关键增强：处理中间指令 (特别是 SEND_FILE 和 TTS_SEND) ---
+      for (const cmd of commands) {
+        if (cmd.type === 'send_file' && cmd.path) {
+          await sendMessage(chatJid, '📦 正在为您回传文件...', { filePath: cmd.path });
+        } else if (cmd.type === 'tts_send' && cmd.text) {
+          const ttsPath = await generateTts(cmd.text);
+          if (ttsPath) {
+            await sendMessage(chatJid, '', { filePath: ttsPath, ptt: true });
+          }
+        }
+      }
+
       if (results.length === 0) {
         // 没有指令了，这就是最终回复
         finalResponse = responseText;
         break;
       }
 
-      // 2. 优化中间执行过程的反馈格式
+      // 2. 极致视觉优化：动态进度条与指令截断
+      const filledChar = '⬤'; 
+      const emptyChar = '◯';
+      const barLength = 10;
+      
+      // 动态进度计算：前 5 步进度感更快，10 步以后趋于平缓
+      let displayPercent = Math.round((iterations / 10) * 100);
+      if (iterations >= 10) displayPercent = 90 + (iterations - 10);
+      displayPercent = Math.min(displayPercent, 99); // 最终一步才到 100
+
+      const progressBlocks = Math.min(Math.floor((displayPercent / 100) * barLength), barLength);
+      const progressBar = filledChar.repeat(progressBlocks) + emptyChar.repeat(barLength - progressBlocks);
+      
       const statusUpdate = commands.map((cmd: any) => {
-        if (cmd.type === 'shell') return `⚙️ 执行命令: \`${cmd.command}\``;
-        if (cmd.type === 'write') return `📝 写入文件: \`${cmd.path}\``;
-        return `🛠️ 执行工具: ${cmd.type}`;
-      }).join('\n');
+        let label = '';
+        let detail = '';
+        if (cmd.type === 'shell') { label = '🐚 执行'; detail = cmd.command; }
+        else if (cmd.type === 'write') { label = '📝 写入'; detail = cmd.path; }
+        else if (cmd.type === 'send_file') { label = '📦 回传'; detail = cmd.path; }
+        else if (cmd.type === 'search_knowledge') { label = '🔍 检索'; detail = cmd.query; }
+        else if (cmd.type === 'list_knowledge') { label = '📚 查阅'; detail = '知识库目录'; }
+        else { label = '🛠️ 工具'; detail = cmd.type; }
+
+        // 关键点：指令截断，防止刷屏
+        const shortDetail = detail.length > 30 ? detail.slice(0, 27) + '...' : detail;
+        return `> ${label}: \`${shortDetail}\``;
+      }).slice(-1).join('\n'); // 仅显示当前最新的动作
 
       await sendMessage(
         chatJid,
-        `⏳ [步骤 ${iterations}] 正在操作...\n${statusUpdate}`
+        `🐾 *NanoClaw 任务执行中...*\n\n` +
+        `进度: ${progressBar}  ${displayPercent}%\n` +
+        `步骤: ${iterations} / ${MAX_ITERATIONS}\n` +
+        `──────────────────\n` +
+        `${statusUpdate}\n` +
+        `──────────────────\n` +
+        `_正在思考下一步动作..._`
       );
 
       // 组装结果反馈给 Gemini
@@ -426,14 +522,33 @@ async function runAgent(
   return finalResponse || '任务执行超时或未给出明确答复。';
 }
 
-async function sendMessage(jid: string, text: string): Promise<void> {
+async function sendMessage(jid: string, text: string, options: { filePath?: string, ptt?: boolean } = {}): Promise<void> {
   if (!sock) {
     logger.warn({ jid }, 'Cannot send message: WhatsApp socket not connected');
     return;
   }
   try {
-    await sock.sendMessage(jid, { text });
-    logger.info({ jid, length: text.length }, 'Message sent');
+    if (options.filePath && fs.existsSync(options.filePath)) {
+      const ext = path.extname(options.filePath).toLowerCase();
+      const fileName = path.basename(options.filePath);
+
+      if (['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
+        await sock.sendMessage(jid, { image: { url: options.filePath }, caption: text });
+      } else if (options.ptt || ext === '.ogg' || ext === '.mp3') {
+        await sock.sendMessage(jid, { audio: { url: options.filePath }, ptt: true });
+        // 发送语音后如果还有文本，另外补发一条
+        if (text && !text.includes(ASSISTANT_NAME)) {
+          await sock.sendMessage(jid, { text });
+        }
+      } else {
+        // 默认作为文档发送
+        await sock.sendMessage(jid, { document: { url: options.filePath }, fileName, caption: text, mimetype: 'application/octet-stream' });
+      }
+      logger.info({ jid, filePath: options.filePath }, 'Media message sent');
+    } else {
+      await sock.sendMessage(jid, { text });
+      logger.info({ jid, length: text.length }, 'Text message sent');
+    }
   } catch (err) {
     logger.error({ jid, err }, 'Failed to send message');
   }
@@ -488,9 +603,10 @@ function startIpcWatcher(): void {
                   await sendMessage(
                     data.chatJid,
                     `${ASSISTANT_NAME}: ${data.text}`,
+                    { filePath: data.filePath }
                   );
                   logger.info(
-                    { chatJid: data.chatJid, sourceGroup },
+                    { chatJid: data.chatJid, sourceGroup, filePath: data.filePath },
                     'IPC message sent',
                   );
                 } else {
@@ -942,10 +1058,11 @@ async function connectWhatsApp(): Promise<void> {
       // Always store chat metadata for group discovery
       storeChatMetadata(chatJid, timestamp);
 
-      // 增强型：多模态支持 - 自动下载语音消息
-      if (registeredGroups[chatJid] && msg.message?.audioMessage) {
+      // 增强型：多模态支持 - 自动下载多媒体消息 (语音和图片)
+      if (registeredGroups[chatJid] && (msg.message?.audioMessage || msg.message?.imageMessage)) {
         (async () => {
           try {
+            const isAudio = !!msg.message?.audioMessage;
             const buffer = await downloadMediaMessage(
               msg,
               'buffer',
@@ -957,12 +1074,14 @@ async function connectWhatsApp(): Promise<void> {
             );
             const mediaDir = path.join(DATA_DIR, 'media');
             if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true });
-            const fileName = `voice_${msg.key.id}.ogg`;
+            
+            const ext = isAudio ? 'ogg' : 'jpg';
+            const fileName = `${isAudio ? 'voice' : 'image'}_${msg.key.id}.${ext}`;
             const filePath = path.join(mediaDir, fileName);
             fs.writeFileSync(filePath, buffer as Buffer);
-            logger.info({ filePath }, 'Audio message downloaded');
+            logger.info({ filePath }, 'Media message downloaded');
           } catch (err) {
-            logger.error({ err }, 'Failed to download audio message');
+            logger.error({ err }, 'Failed to download media message');
           }
         })();
       }
