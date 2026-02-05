@@ -7,6 +7,7 @@ import makeWASocket, {
   WASocket,
   makeCacheableSignalKeyStore,
   useMultiFileAuthState,
+  downloadMediaMessage,
 } from '@whiskeysockets/baileys';
 
 import {
@@ -30,6 +31,7 @@ import {
   getAllChats,
   getAllTasks,
   getLastGroupSync,
+  getMemories,
   getMessagesSince,
   getNewMessages,
   getRecentMessages,
@@ -37,6 +39,7 @@ import {
   initDatabase,
   setLastGroupSync,
   storeChatMetadata,
+  storeMemory,
   storeMessage,
   updateChatName,
 } from './db.js';
@@ -60,6 +63,7 @@ let isConnecting = false;
 let messageLoopRunning = false;
 let ipcWatcherRunning = false;
 let groupSyncTimerStarted = false;
+let globalInterruptTimestamp = 0;
 
 /**
  * Acquire a lock file to prevent multiple instances.
@@ -232,6 +236,8 @@ function getAvailableGroups(): AvailableGroup[] {
     }));
 }
 
+import { analyzeMedia } from './media-analyzer.js';
+
 async function processMessage(msg: NewMessage): Promise<void> {
   const group = registeredGroups[msg.chat_jid];
   if (!group) return;
@@ -256,17 +262,39 @@ async function processMessage(msg: NewMessage): Promise<void> {
 
   // Use a sliding window of the last 50 messages for full context
   const recentMessages = getRecentMessages(msg.chat_jid, 50);
+  const memories = getMemories(msg.chat_jid);
 
-  const lines = recentMessages.map((m) => {
+  const memoryContext = memories.length > 0 
+    ? `--- LONG-TERM MEMORY (Facts/Materials) ---\n${memories.map(m => `- [${m.category}] ${m.fact}`).join('\n')}\n`
+    : '';
+
+  // --- 预处理多模态上下文 ---
+  const enhancedHistory = await Promise.all(recentMessages.map(async (m) => {
     const isBot = m.from_me || m.content.startsWith(`${ASSISTANT_NAME}:`);
     const sender = isBot ? 'ASSISTANT' : `USER(${m.sender_name})`;
-    const cleanContent = isBot
+    let cleanContent = isBot
       ? m.content.replace(`${ASSISTANT_NAME}:`, '').trim()
       : m.content;
-    return `[${m.timestamp}] ${sender}: ${cleanContent}`;
-  });
 
-  const prompt = `--- CONVERSATION HISTORY (Last 50 messages) ---\n${lines.join('\n')}\n--- END HISTORY ---`;
+    // 检查是否有对应的多模态文件并进行分析
+    const mediaDir = path.join(DATA_DIR, 'media');
+    const voicePath = path.join(mediaDir, `voice_${m.id}.ogg`);
+    // 这里未来可以扩展支持 image_${m.id}.jpg 等
+    
+    if (fs.existsSync(voicePath)) {
+      const analysis = await analyzeMedia(voicePath);
+      if (analysis) {
+        cleanContent += `\n[系统多模态分析: ${analysis.description}]`;
+        // 注意：由于 API 限制，我们暂时不让 AI 直接 read_file 音频，而是通过预分析告知内容
+      }
+    }
+
+    return `[${m.timestamp}] ${sender}: ${cleanContent}`;
+  }));
+
+  const historyContext = enhancedHistory.join('\n');
+
+  const prompt = `${memoryContext}\n--- CONVERSATION HISTORY (Last 50 messages) ---\n${historyContext}\n--- END HISTORY ---\n\n请根据以上长期记忆和对话历史，回答用户当前的问题。如果用户发送了音频或图片，请参考[系统多模态分析]给出的描述进行回答。如果用户提到了新的材料或需要记住的事实，请在回复中体现。`;
 
   if (recentMessages.length === 0) return;
 
@@ -274,15 +302,16 @@ async function processMessage(msg: NewMessage): Promise<void> {
     { 
       group: group.name, 
       user: msg.sender_name, 
-      contextSize: recentMessages.length 
+      contextSize: recentMessages.length,
+      memorySize: memories.length
     },
-    'Processing message with sliding window context',
+    'Processing message with memory and context',
   );
 
   // 1. 发送即时确认，避免用户焦虑
   await sendMessage(msg.chat_jid, `🐾 @${ASSISTANT_NAME} 正在处理您的请求...`);
   
-  // 开启打字状态心跳，确保在长任务中状态不消失
+  // 开启打字状态心跳
   const typingInterval = setInterval(() => setTyping(msg.chat_jid, true), 5000);
   await setTyping(msg.chat_jid, true);
 
@@ -293,8 +322,34 @@ async function processMessage(msg: NewMessage): Promise<void> {
 
   if (response) {
     lastAgentTimestamp[msg.chat_jid] = msg.timestamp;
-    // 3. 增加明确的结束标识
     await sendMessage(msg.chat_jid, `${ASSISTANT_NAME}: ${response}\n\n✅ 处理完毕。`);
+
+    // --- 异步记忆提炼 (不阻塞回复) ---
+    (async () => {
+      try {
+        const memoryPrompt = `以下是最近的一段对话和已有的长期记忆。请判断本次对话是否产生了值得记录的新"材料"、"事实"或"偏好"。
+        如果有，请简洁地列出这些事实（每条一行）。如果没有，请回复"NONE"。
+        
+        对话内容：
+        ${historyContext}
+        
+        现有记忆：
+        ${memories.map(m => m.fact).join('\n')}
+        
+        仅输出新事实或"NONE"。`;
+        
+        const result = await runLocalGemini(memoryPrompt, 'MemoryEngine');
+        if (result.success && result.response && result.response.trim() !== 'NONE') {
+          const facts = result.response.split('\n').filter(f => f.trim().length > 5);
+          for (const fact of facts) {
+            storeMemory(msg.chat_jid, fact.trim(), 'extracted');
+            logger.info({ chat_jid: msg.chat_jid, fact }, 'New memory extracted and stored');
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, 'Memory extraction failed');
+      }
+    })();
   }
 }
 
@@ -307,9 +362,16 @@ async function runAgent(
   let currentPrompt = initialPrompt;
   let finalResponse = '';
   let iterations = 0;
-  const MAX_ITERATIONS = 15; // 稍微增加上限，应对更复杂的任务
+  const MAX_ITERATIONS = 15;
+  const taskStartTime = Date.now(); // 记录任务开始时间
 
   while (iterations < MAX_ITERATIONS) {
+    // 检查是否有在此任务开始之后发出的中断指令
+    if (globalInterruptTimestamp > taskStartTime) {
+      logger.warn({ chatJid, iterations }, 'Agent execution aborted due to global interrupt');
+      return '🛑 任务已被手动终止。';
+    }
+
     iterations++;
     try {
       const result = await runLocalGemini(currentPrompt, group.name);
@@ -778,10 +840,10 @@ async function connectWhatsApp(): Promise<void> {
     if (qr) {
       isConnecting = false;
       const msg =
-        'WhatsApp authentication required. Run /setup in Claude Code.';
+        'WhatsApp authentication required. Please scan the QR code in the terminal or use the setup tool.';
       logger.error(msg);
       exec(
-        `osascript -e 'display notification "${msg}" with title "NanoClaw" sound name "Basso"'`,
+        `osascript -e 'display notification "${msg}" with title "NanoClaw 🐾" sound name "Basso"'`,
       );
       setTimeout(() => process.exit(1), 1000);
     }
@@ -804,7 +866,7 @@ async function connectWhatsApp(): Promise<void> {
           setTimeout(() => connectWhatsApp(), 2000);
         }
       } else {
-        logger.info('Logged out. Run /setup to re-authenticate.');
+        logger.info('Logged out. Please re-authenticate to continue using NanoClaw.');
         process.exit(0);
       }
     } else if (connection === 'open') {
@@ -846,7 +908,7 @@ async function connectWhatsApp(): Promise<void> {
 
   currentSock.ev.on('creds.update', saveCreds);
 
-  currentSock.ev.on('messages.upsert', ({ messages }) => {
+  currentSock.ev.on('messages.upsert', async ({ messages }) => {
     for (const msg of messages) {
       if (!msg.message) continue;
       const rawJid = msg.key.remoteJid;
@@ -855,12 +917,54 @@ async function connectWhatsApp(): Promise<void> {
       // Translate LID JID to phone JID if applicable
       const chatJid = translateJid(rawJid);
 
+      // --- 紧急制动逻辑 (STOP Command) ---
+      const messageContent = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+      if (messageContent.trim() === '/stop' || messageContent.trim() === '🛑') {
+        logger.warn({ chatJid }, '🛑 EMERGENCY STOP RECEIVED - Clearing Queue');
+        globalInterruptTimestamp = Date.now();
+        
+        // 立即将处理指针跳转到当前消息的时间，从而跳过所有积压的消息
+        const msgTs = new Date(Number(msg.messageTimestamp) * 1000).toISOString();
+        if (msgTs > lastTimestamp) {
+          lastTimestamp = msgTs;
+          saveState(); // 立即持久化状态
+        }
+
+        await sendMessage(chatJid, '🛑 **紧急制动已触发**：\n1. 历史待处理任务已清空。\n2. 正在执行的任务已被标记为中断。\n\n系统已就绪，等待您的新指令。');
+        continue; // 终止当前消息的后续存储和处理
+      }
+
       const timestamp = new Date(
         Number(msg.messageTimestamp) * 1000,
       ).toISOString();
 
       // Always store chat metadata for group discovery
       storeChatMetadata(chatJid, timestamp);
+
+      // 增强型：多模态支持 - 自动下载语音消息
+      if (registeredGroups[chatJid] && msg.message?.audioMessage) {
+        (async () => {
+          try {
+            const buffer = await downloadMediaMessage(
+              msg,
+              'buffer',
+              {},
+              { 
+                logger: logger as any,
+                reuploadRequest: currentSock.updateMediaMessage 
+              }
+            );
+            const mediaDir = path.join(DATA_DIR, 'media');
+            if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true });
+            const fileName = `voice_${msg.key.id}.ogg`;
+            const filePath = path.join(mediaDir, fileName);
+            fs.writeFileSync(filePath, buffer as Buffer);
+            logger.info({ filePath }, 'Audio message downloaded');
+          } catch (err) {
+            logger.error({ err }, 'Failed to download audio message');
+          }
+        })();
+      }
 
       // Only store full message content for registered groups
       if (registeredGroups[chatJid]) {

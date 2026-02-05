@@ -5,6 +5,9 @@ import { DATA_DIR } from './config.js';
 const dbPath = path.join(DATA_DIR, 'nanoclaw.db');
 const db = new Database(dbPath);
 
+// Enable WAL mode for better concurrency
+db.pragma('journal_mode = WAL');
+
 export interface ChatInfo {
   jid: string;
   name: string;
@@ -65,13 +68,64 @@ export function initDatabase() {
       key TEXT PRIMARY KEY,
       value TEXT
     );
+    CREATE TABLE IF NOT EXISTS memories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chat_jid TEXT,
+      fact TEXT,
+      category TEXT,
+      created_at DATETIME
+    );
   `);
+}
+
+export function storeMemory(chatJid: string, fact: string, category: string = 'general') {
+  db.prepare(`
+    INSERT INTO memories (chat_jid, fact, category, created_at)
+    VALUES (?, ?, ?, ?)
+  `).run(chatJid, fact, category, new Date().toISOString());
+}
+
+export function getMemories(chatJid: string) {
+  return db.prepare(`
+    SELECT fact, category, created_at FROM memories 
+    WHERE chat_jid = ? 
+    ORDER BY created_at DESC
+  `).all(chatJid) as { fact: string; category: string; created_at: string }[];
+}
+
+export function deleteMemory(id: number) {
+  db.prepare('DELETE FROM memories WHERE id = ?').run(id);
 }
 
 export function storeMessage(msg: any, chatJid: string, fromMe: boolean, senderName?: string) {
   const id = msg.key.id;
   const senderJid = msg.key.participant || msg.key.remoteJid;
-  const content = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+  
+  // 增强型内容提取：支持纯文本、带格式文本、图片/视频/文档的说明文字 (caption)
+  const message = msg.message;
+  let content = '';
+
+  if (message) {
+    content = 
+      message.conversation || 
+      message.extendedTextMessage?.text || 
+      message.imageMessage?.caption || 
+      message.videoMessage?.caption || 
+      message.documentMessage?.caption || 
+      message.viewOnceMessageV2?.message?.imageMessage?.caption ||
+      message.viewOnceMessageV2?.message?.videoMessage?.caption ||
+      '';
+
+    // 如果内容为空但存在多媒体，添加占位符以便 AI 感知
+    if (!content) {
+      if (message.imageMessage || message.viewOnceMessageV2?.message?.imageMessage) content = '[图片消息/IMAGE]';
+      else if (message.videoMessage || message.viewOnceMessageV2?.message?.videoMessage) content = '[视频消息/VIDEO]';
+      else if (message.documentMessage) content = `[文档消息/DOCUMENT: ${message.documentMessage.fileName || 'unknown'}]`;
+      else if (message.audioMessage) content = '[语音消息/AUDIO]';
+      else if (message.stickerMessage) content = '[表情包/STICKER]';
+    }
+  }
+
   const timestamp = new Date(Number(msg.messageTimestamp) * 1000).toISOString();
 
   db.prepare(`
@@ -138,27 +192,48 @@ export function getTaskById(id: string): Task | undefined {
 }
 
 export function createTask(task: Task) {
-  db.prepare(`
-    INSERT INTO tasks (id, group_folder, chat_jid, prompt, schedule_type, schedule_value, context_mode, next_run, status, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(task.id, task.group_folder, task.chat_jid, task.prompt, task.schedule_type, task.schedule_value, task.context_mode, task.next_run, task.status, task.created_at);
+  try {
+    db.prepare(`
+      INSERT INTO tasks (id, group_folder, chat_jid, prompt, schedule_type, schedule_value, context_mode, next_run, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(task.id, task.group_folder, task.chat_jid, task.prompt, task.schedule_type, task.schedule_value, task.context_mode, task.next_run, task.status, task.created_at);
+  } catch (error) {
+    console.error('Error creating task:', error);
+  }
 }
 
+const ALLOWED_TASK_FIELDS = ['group_folder', 'prompt', 'schedule_type', 'schedule_value', 'context_mode', 'next_run', 'status'];
+
 export function updateTask(id: string, updates: Partial<Task>) {
-  const fields = Object.keys(updates).map(k => `${k} = ?`).join(', ');
-  const values = Object.values(updates);
-  db.prepare(`UPDATE tasks SET ${fields} WHERE id = ?`).run(...values, id);
+  try {
+    const fieldsToUpdate = Object.keys(updates).filter(k => ALLOWED_TASK_FIELDS.includes(k));
+    if (fieldsToUpdate.length === 0) return;
+
+    const fields = fieldsToUpdate.map(k => `${k} = ?`).join(', ');
+    const values = fieldsToUpdate.map(k => (updates as any)[k]);
+    db.prepare(`UPDATE tasks SET ${fields} WHERE id = ?`).run(...values, id);
+  } catch (error) {
+    console.error('Error updating task:', error);
+  }
 }
 
 export function deleteTask(id: string) {
-  db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
+  try {
+    db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
+  } catch (error) {
+    console.error('Error deleting task:', error);
+  }
 }
 
 export function logTaskRun(run: any) {
-  db.prepare(`
-    INSERT INTO task_runs (task_id, run_at, duration_ms, status, result, error)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(run.task_id, run.run_at, run.duration_ms, run.status, run.result, run.error);
+  try {
+    db.prepare(`
+      INSERT INTO task_runs (task_id, run_at, duration_ms, status, result, error)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(run.task_id, run.run_at, run.duration_ms, run.status, run.result, run.error);
+  } catch (error) {
+    console.error('Error logging task run:', error);
+  }
 }
 
 export function setLastGroupSync() {
