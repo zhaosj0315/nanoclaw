@@ -300,10 +300,20 @@ async function processMessage(msg: NewMessage): Promise<void> {
     id: msg.id,
     participant: msg.sender
   };
+
+  // 关键修复：时效性检查
+  // 如果消息时间早于当前时间 2 分钟以上（且不是重启瞬间的新消息），则视为过期历史，不再自动回复。
+  const msgTimestamp = new Date(msg.timestamp).getTime();
+  const now = Date.now();
+  if (now - msgTimestamp > 2 * 60 * 1000) {
+    logger.info({ msgId: msg.id, diff: now - msgTimestamp }, 'Skipping expired message (older than 2 mins)');
+    return;
+  }
+
   await sendReaction(msg.chat_jid, msgKey, '👀');
 
-  // Use a sliding window of the last 50 messages for full context
-  const recentMessages = getRecentMessages(msg.chat_jid, 50);
+  // 关键优化：减少上下文深度，仅保留最近 15 条，防止 AI 纠缠历史话题
+  const recentMessages = getRecentMessages(msg.chat_jid, 15);
   const memories = getMemories(msg.chat_jid);
 
   const memoryContext = memories.length > 0 
@@ -339,8 +349,13 @@ async function processMessage(msg: NewMessage): Promise<void> {
         // 读取缓存，避免重复分析
         analysis = loadJson<any>(analysisCachePath, null);
       } else {
-        analysis = await analyzeMedia(voicePath);
-        if (analysis) saveJson(analysisCachePath, analysis);
+        // 仅对最近 10 分钟内的消息进行实时分析，避免重启后对历史记录进行风暴式分析
+        const msgTime = new Date(m.timestamp).getTime();
+        const now = Date.now();
+        if (now - msgTime < 10 * 60 * 1000) {
+          analysis = await analyzeMedia(voicePath);
+          if (analysis) saveJson(analysisCachePath, analysis);
+        }
       }
 
       if (analysis) {
@@ -356,8 +371,13 @@ async function processMessage(msg: NewMessage): Promise<void> {
       if (fs.existsSync(analysisCachePath)) {
         analysis = loadJson<any>(analysisCachePath, null);
       } else {
-        analysis = await analyzeMedia(imagePath);
-        if (analysis) saveJson(analysisCachePath, analysis);
+        // 仅对最近 10 分钟内的消息进行实时分析
+        const msgTime = new Date(m.timestamp).getTime();
+        const now = Date.now();
+        if (now - msgTime < 10 * 60 * 1000) {
+          analysis = await analyzeMedia(imagePath);
+          if (analysis) saveJson(analysisCachePath, analysis);
+        }
       }
 
       if (analysis) {
@@ -373,7 +393,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
 
   const historyContext = enhancedHistory.join('\n');
 
-  const prompt = `${memoryContext}\n--- CONVERSATION HISTORY (Last 50 messages) ---\n${historyContext}\n--- END HISTORY ---\n\n请根据以上长期记忆和对话历史，回答用户当前的问题。如果历史记录中包含图片或音频路径，系统已通过多模态接口将其原生加载。请务必仔细分析这些视觉/听觉内容，并在回复中具体描述你所看到的内容或听到的指令。如果用户提到了新的材料或需要记住的事实，请在回复中体现。`;
+  const prompt = `${memoryContext}\n--- CONVERSATION HISTORY (Last 15 messages) ---\n${historyContext}\n--- END HISTORY ---\n\n请根据以上长期记忆和对话历史，回答用户当前的问题。如果历史记录中包含图片或音频路径，系统已通过多模态接口将其原生加载。请务必仔细分析这些视觉/听觉内容，并在回复中具体描述你所看到的内容或听到的指令。如果用户提到了新的材料或需要记住的事实，请在回复中体现。`;
 
   if (recentMessages.length === 0) return;
 
