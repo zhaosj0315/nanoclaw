@@ -1,7 +1,16 @@
 import path from 'path';
+import dotenv from 'dotenv';
 
-export const ASSISTANT_NAME = process.env.ASSISTANT_NAME || 'Andy';
-export const POLL_INTERVAL = 2000;
+// Load environment variables from .env if it exists
+dotenv.config();
+
+let name = process.env.ASSISTANT_NAME || 'NanoClaw';
+// Prevent accidental assignment of log filenames to assistant name
+if (name.endsWith('.log') || name.includes('/') || name.includes(' ')) {
+  name = 'NanoClaw';
+}
+export const ASSISTANT_NAME = name;
+export const POLL_INTERVAL = 5000;
 export const SCHEDULER_POLL_INTERVAL = 60000;
 
 // Absolute paths needed for container mounts
@@ -32,16 +41,9 @@ export const CONTAINER_MAX_OUTPUT_SIZE = parseInt(
 ); // 10MB default
 export const IPC_POLL_INTERVAL = 1000;
 
-function escapeRegex(str: string): string {
+export function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-export const TRIGGER_PATTERN = new RegExp(
-  `^@${escapeRegex(ASSISTANT_NAME)}\\b`,
-  'i',
-);
-
-// Timezone for scheduled tasks (cron expressions, etc.)
-// Uses system timezone by default
-export const TIMEZONE =
-  process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone;
+export const TRIGGER_PATTERN = new RegExp(`^@(${escapeRegex(ASSISTANT_NAME)}|小助手)\\b`, 'i');
+export const TIMEZONE = process.env.TZ || 'Asia/Shanghai';

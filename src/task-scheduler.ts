@@ -1,33 +1,32 @@
-import { CronExpressionParser } from 'cron-parser';
 import fs from 'fs';
 import path from 'path';
-
+import { CronExpressionParser } from 'cron-parser';
 import {
   DATA_DIR,
   GROUPS_DIR,
   MAIN_GROUP_FOLDER,
-  SCHEDULER_POLL_INTERVAL,
+  POLL_INTERVAL,
   TIMEZONE,
 } from './config.js';
-import { runContainerAgent, writeTasksSnapshot } from './container-runner.js';
 import {
   getAllTasks,
-  getDueTasks,
   getTaskById,
   logTaskRun,
-  updateTaskAfterRun,
+  updateTask,
 } from './db.js';
+import { RegisteredGroup, Session } from './types.js';
+import { writeTasksSnapshot } from './container-runner.js';
+import { runLocalGemini } from './local-gemini.js';
 import { logger } from './logger.js';
-import { RegisteredGroup, ScheduledTask } from './types.js';
 
 export interface SchedulerDependencies {
   sendMessage: (jid: string, text: string) => Promise<void>;
   registeredGroups: () => Record<string, RegisteredGroup>;
-  getSessions: () => Record<string, string>;
+  getSessions: () => Session;
 }
 
 async function runTask(
-  task: ScheduledTask,
+  task: any,
   deps: SchedulerDependencies,
 ): Promise<void> {
   const startTime = Date.now();
@@ -60,7 +59,7 @@ async function runTask(
     return;
   }
 
-  // Update tasks snapshot for container to read (filtered by group)
+  // Update tasks snapshot for container to read
   const isMain = task.group_folder === MAIN_GROUP_FOLDER;
   const tasks = getAllTasks();
   writeTasksSnapshot(
@@ -80,99 +79,54 @@ async function runTask(
   let result: string | null = null;
   let error: string | null = null;
 
-  // For group context mode, use the group's current session
-  const sessions = deps.getSessions();
-  const sessionId =
-    task.context_mode === 'group' ? sessions[task.group_folder] : undefined;
-
   try {
-    const output = await runContainerAgent(group, {
-      prompt: task.prompt,
-      sessionId,
-      groupFolder: task.group_folder,
-      chatJid: task.chat_jid,
-      isMain,
-      isScheduledTask: true,
-    });
-
-    if (output.status === 'error') {
-      error = output.error || 'Unknown error';
+    const geminiRes = await runLocalGemini(task.prompt, group.name);
+    if (geminiRes.success && geminiRes.response) {
+      result = geminiRes.response;
+      await deps.sendMessage(task.chat_jid, `[定时任务] ${group.name}:\n${result}`);
     } else {
-      result = output.result;
+      error = geminiRes.error || 'Unknown Gemini error';
     }
-
-    logger.info(
-      { taskId: task.id, durationMs: Date.now() - startTime },
-      'Task completed',
-    );
-  } catch (err) {
-    error = err instanceof Error ? err.message : String(err);
-    logger.error({ taskId: task.id, error }, 'Task failed');
+  } catch (err: any) {
+    error = err.message;
   }
-
-  const durationMs = Date.now() - startTime;
 
   logTaskRun({
     task_id: task.id,
     run_at: new Date().toISOString(),
-    duration_ms: durationMs,
+    duration_ms: Date.now() - startTime,
     status: error ? 'error' : 'success',
     result,
     error,
   });
 
+  // Calculate next run
   let nextRun: string | null = null;
   if (task.schedule_type === 'cron') {
-    const interval = CronExpressionParser.parse(task.schedule_value, {
-      tz: TIMEZONE,
-    });
+    const interval = CronExpressionParser.parse(task.schedule_value, { tz: TIMEZONE });
     nextRun = interval.next().toISOString();
   } else if (task.schedule_type === 'interval') {
-    const ms = parseInt(task.schedule_value, 10);
-    nextRun = new Date(Date.now() + ms).toISOString();
-  }
-  // 'once' tasks have no next run
-
-  const resultSummary = error
-    ? `Error: ${error}`
-    : result
-      ? result.slice(0, 200)
-      : 'Completed';
-  updateTaskAfterRun(task.id, nextRun, resultSummary);
-}
-
-let schedulerRunning = false;
-
-export function startSchedulerLoop(deps: SchedulerDependencies): void {
-  if (schedulerRunning) {
-    logger.debug('Scheduler loop already running, skipping duplicate start');
+    nextRun = new Date(Date.now() + parseInt(task.schedule_value, 10)).toISOString();
+  } else {
+    // 'once' tasks are done
+    updateTask(task.id, { status: 'paused', next_run: null });
     return;
   }
-  schedulerRunning = true;
-  logger.info('Scheduler loop started');
 
-  const loop = async () => {
-    try {
-      const dueTasks = getDueTasks();
-      if (dueTasks.length > 0) {
-        logger.info({ count: dueTasks.length }, 'Found due tasks');
+  updateTask(task.id, { next_run: nextRun });
+}
+
+export function startSchedulerLoop(deps: SchedulerDependencies) {
+  setInterval(async () => {
+    const tasks = getAllTasks();
+    const now = new Date().toISOString();
+
+    for (const task of tasks) {
+      if (task.status === 'active' && task.next_run && task.next_run <= now) {
+        await runTask(task, deps);
       }
-
-      for (const task of dueTasks) {
-        // Re-check task status in case it was paused/cancelled
-        const currentTask = getTaskById(task.id);
-        if (!currentTask || currentTask.status !== 'active') {
-          continue;
-        }
-
-        await runTask(currentTask, deps);
-      }
-    } catch (err) {
-      logger.error({ err }, 'Error in scheduler loop');
     }
-
-    setTimeout(loop, SCHEDULER_POLL_INTERVAL);
-  };
-
-  loop();
+  }, POLL_INTERVAL);
+  
+  logger.info('Scheduler loop started');
 }

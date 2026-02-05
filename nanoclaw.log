@@ -1,0 +1,51 @@
+[12:57:32.728] [32mINFO[39m (85777): [36mDatabase initialized[39m
+[12:57:32.728] [32mINFO[39m (85777): [36mState loaded[39m
+    [35mgroupCount[39m: 1
+[12:57:33.562] [32mINFO[39m (85777): [36mconnected to WA[39m
+    [35mbrowser[39m: [
+      "NanoClaw",
+      "Chrome",
+      "1.0.0"
+    ]
+    [35mhelloMsg[39m: {
+      "clientHello": {
+        "ephemeral": "W/YnGIWsiEwG6dUO3VApQLVxQMpktyo4nHRtO3FoYXg="
+      }
+    }
+[12:57:33.895] [32mINFO[39m (85777): [36mnot logged in, attempting registration...[39m
+    [35mnode[39m: {
+      "passive": false,
+      "userAgent": {
+        "platform": "WEB",
+        "appVersion": {
+          "primary": 2,
+          "secondary": 3000,
+          "tertiary": 1027934701
+        },
+        "mcc": "000",
+        "mnc": "000",
+        "osVersion": "0.1",
+        "device": "Desktop",
+        "osBuildNumber": "0.1",
+        "releaseChannel": "RELEASE",
+        "localeLanguageIso6391": "en",
+        "localeCountryIso31661Alpha2": "US"
+      },
+      "webInfo": {
+        "webSubPlatform": "WEB_BROWSER"
+      },
+      "connectType": "WIFI_UNKNOWN",
+      "connectReason": "USER_ACTIVATED",
+      "devicePairingData": {
+        "eRegid": "AAAADw==",
+        "eKeytype": "BQ==",
+        "eIdent": "Ar6V8QeY/rmtjS6sPM6krKCrtKc1gpi57QkQBLKKGxY=",
+        "eSkeyId": "AAAB",
+        "eSkeyVal": "cgtSU1dglMx8kbtk9fwbGSmcDaiDrB9khZVTbojXoFk=",
+        "eSkeySig": "dfBfJa3yJW5eyWBXv3lMSpBrGTzLpLjPzdq3qJTNTiAUSLcVb3PfAlTxIuuSHV+pGZ+nIXjewLSi8K9S12NcCw==",
+        "buildHash": "VLsNToSifLU6uyYzJzwXCA==",
+        "deviceProps": "CghOYW5vQ2xhdxIGCAoQDxgHGAEgASoXGIBQIAEwADgBQAFIAVABWAFgAXABeAA="
+      },
+      "pull": false
+    }
+[12:57:34.593] [31mERROR[39m (85777): [36mWhatsApp authentication required. Run /setup in Claude Code.[39m

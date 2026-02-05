@@ -25,12 +25,14 @@ import {
   writeGroupsSnapshot,
   writeTasksSnapshot,
 } from './container-runner.js';
+import { runLocalGemini } from './local-gemini.js';
 import {
   getAllChats,
   getAllTasks,
   getLastGroupSync,
   getMessagesSince,
   getNewMessages,
+  getRecentMessages,
   getTaskById,
   initDatabase,
   setLastGroupSync,
@@ -44,8 +46,9 @@ import { loadJson, saveJson } from './utils.js';
 import { logger } from './logger.js';
 
 const GROUP_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const PID_FILE = path.join(DATA_DIR, 'nanoclaw.pid');
 
-let sock: WASocket;
+let sock: WASocket | null = null;
 let lastTimestamp = '';
 let sessions: Session = {};
 let registeredGroups: Record<string, RegisteredGroup> = {};
@@ -53,9 +56,59 @@ let lastAgentTimestamp: Record<string, string> = {};
 // LID to phone number mapping (WhatsApp now sends LID JIDs for self-chats)
 let lidToPhoneMap: Record<string, string> = {};
 // Guards to prevent duplicate loops on WhatsApp reconnect
+let isConnecting = false;
 let messageLoopRunning = false;
 let ipcWatcherRunning = false;
 let groupSyncTimerStarted = false;
+
+/**
+ * Acquire a lock file to prevent multiple instances.
+ */
+function acquireLock(): void {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (fs.existsSync(PID_FILE)) {
+    const pid = parseInt(fs.readFileSync(PID_FILE, 'utf-8'), 10);
+    try {
+      // Check if process is still running
+      process.kill(pid, 0);
+      logger.error({ pid }, 'Another instance of NanoClaw is already running');
+      process.exit(1);
+    } catch (err: any) {
+      if (err.code === 'EPERM') {
+        logger.error({ pid }, 'Another instance of NanoClaw is already running (EPERM)');
+        process.exit(1);
+      }
+      // Process not running, stale lock file
+      logger.warn({ pid, code: err.code }, 'Removing stale lock file');
+      try {
+        fs.unlinkSync(PID_FILE);
+      } catch (e) {
+        // Ignore errors during unlink if file already gone
+      }
+    }
+  }
+  fs.writeFileSync(PID_FILE, process.pid.toString());
+
+  // Ensure lock is released on exit
+  process.on('exit', () => releaseLock());
+  process.on('SIGINT', () => {
+    releaseLock();
+    process.exit(0);
+  });
+  process.on('SIGTERM', () => {
+    releaseLock();
+    process.exit(0);
+  });
+}
+
+function releaseLock(): void {
+  if (fs.existsSync(PID_FILE)) {
+    const pid = parseInt(fs.readFileSync(PID_FILE, 'utf-8'), 10);
+    if (pid === process.pid) {
+      fs.unlinkSync(PID_FILE);
+    }
+  }
+}
 
 /**
  * Translate a JID from LID format to phone format if we have a mapping.
@@ -73,6 +126,7 @@ function translateJid(jid: string): string {
 }
 
 async function setTyping(jid: string, isTyping: boolean): Promise<void> {
+  if (!sock) return;
   try {
     await sock.sendPresenceUpdate(isTyping ? 'composing' : 'paused', jid);
   } catch (err) {
@@ -127,6 +181,7 @@ function registerGroup(jid: string, group: RegisteredGroup): void {
  * Called on startup, daily, and on-demand via IPC.
  */
 async function syncGroupMetadata(force = false): Promise<void> {
+  if (!sock) return;
   // Check if we need to sync (skip if synced recently, unless forced)
   if (!force) {
     const lastSync = getLastGroupSync();
@@ -181,112 +236,139 @@ async function processMessage(msg: NewMessage): Promise<void> {
   const group = registeredGroups[msg.chat_jid];
   if (!group) return;
 
+  // Only skip if it's a known bot response format to prevent loops
+  // Allows processing self-sent messages for testing/debugging
+  if (msg.from_me && (msg.content.startsWith('🐾') || msg.content.startsWith(`${ASSISTANT_NAME}:`))) {
+    return;
+  }
+
   const content = msg.content.trim();
-  const isMainGroup = group.folder === MAIN_GROUP_FOLDER;
-
-  // Main group responds to all messages; other groups require trigger prefix
-  if (!isMainGroup && !TRIGGER_PATTERN.test(content)) return;
-
-  // Get all messages since last agent interaction so the session has full context
-  const sinceTimestamp = lastAgentTimestamp[msg.chat_jid] || '';
-  const missedMessages = getMessagesSince(
-    msg.chat_jid,
-    sinceTimestamp,
-    ASSISTANT_NAME,
+  logger.info(
+    { group: group.name, user: msg.sender_name, content },
+    'New message received',
   );
 
-  const lines = missedMessages.map((m) => {
-    // Escape XML special characters in content
-    const escapeXml = (s: string) =>
-      s
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-    return `<message sender="${escapeXml(m.sender_name)}" time="${m.timestamp}">${escapeXml(m.content)}</message>`;
-  });
-  const prompt = `<messages>\n${lines.join('\n')}\n</messages>`;
+  const isMainGroup = group.folder.toLowerCase() === MAIN_GROUP_FOLDER.toLowerCase();
+  const isPrivateChat = msg.chat_jid.endsWith('@s.whatsapp.net');
 
-  if (!prompt) return;
+  // Skip trigger requirement if it's the main group, a private chat, or the trigger is present
+  if (!isMainGroup && !isPrivateChat && !TRIGGER_PATTERN.test(content)) return;
+
+  // Use a sliding window of the last 50 messages for full context
+  const recentMessages = getRecentMessages(msg.chat_jid, 50);
+
+  const lines = recentMessages.map((m) => {
+    const isBot = m.from_me || m.content.startsWith(`${ASSISTANT_NAME}:`);
+    const sender = isBot ? 'ASSISTANT' : `USER(${m.sender_name})`;
+    const cleanContent = isBot
+      ? m.content.replace(`${ASSISTANT_NAME}:`, '').trim()
+      : m.content;
+    return `[${m.timestamp}] ${sender}: ${cleanContent}`;
+  });
+
+  const prompt = `--- CONVERSATION HISTORY (Last 50 messages) ---\n${lines.join('\n')}\n--- END HISTORY ---`;
+
+  if (recentMessages.length === 0) return;
 
   logger.info(
-    { group: group.name, messageCount: missedMessages.length },
-    'Processing message',
+    { 
+      group: group.name, 
+      user: msg.sender_name, 
+      contextSize: recentMessages.length 
+    },
+    'Processing message with sliding window context',
   );
 
+  // 1. 发送即时确认，避免用户焦虑
+  await sendMessage(msg.chat_jid, `🐾 @${ASSISTANT_NAME} 正在处理您的请求...`);
+  
+  // 开启打字状态心跳，确保在长任务中状态不消失
+  const typingInterval = setInterval(() => setTyping(msg.chat_jid, true), 5000);
   await setTyping(msg.chat_jid, true);
+
   const response = await runAgent(group, prompt, msg.chat_jid);
+  
+  clearInterval(typingInterval);
   await setTyping(msg.chat_jid, false);
 
   if (response) {
     lastAgentTimestamp[msg.chat_jid] = msg.timestamp;
-    await sendMessage(msg.chat_jid, `${ASSISTANT_NAME}: ${response}`);
+    // 3. 增加明确的结束标识
+    await sendMessage(msg.chat_jid, `${ASSISTANT_NAME}: ${response}\n\n✅ 处理完毕。`);
   }
 }
 
 async function runAgent(
   group: RegisteredGroup,
-  prompt: string,
+  initialPrompt: string,
   chatJid: string,
 ): Promise<string | null> {
-  const isMain = group.folder === MAIN_GROUP_FOLDER;
-  const sessionId = sessions[group.folder];
+  const { executeTools } = await import('./tool-executor.js');
+  let currentPrompt = initialPrompt;
+  let finalResponse = '';
+  let iterations = 0;
+  const MAX_ITERATIONS = 15; // 稍微增加上限，应对更复杂的任务
 
-  // Update tasks snapshot for container to read (filtered by group)
-  const tasks = getAllTasks();
-  writeTasksSnapshot(
-    group.folder,
-    isMain,
-    tasks.map((t) => ({
-      id: t.id,
-      groupFolder: t.group_folder,
-      prompt: t.prompt,
-      schedule_type: t.schedule_type,
-      schedule_value: t.schedule_value,
-      status: t.status,
-      next_run: t.next_run,
-    })),
-  );
+  while (iterations < MAX_ITERATIONS) {
+    iterations++;
+    try {
+      const result = await runLocalGemini(currentPrompt, group.name);
 
-  // Update available groups snapshot (main group only can see all groups)
-  const availableGroups = getAvailableGroups();
-  writeGroupsSnapshot(
-    group.folder,
-    isMain,
-    availableGroups,
-    new Set(Object.keys(registeredGroups)),
-  );
+      if (!result.success || !result.response) {
+        logger.error(
+          { group: group.name, error: result.error },
+          'Local Gemini error',
+        );
+        return null;
+      }
 
-  try {
-    const output = await runContainerAgent(group, {
-      prompt,
-      sessionId,
-      groupFolder: group.folder,
-      chatJid,
-      isMain,
-    });
+      const responseText = result.response;
+      logger.info({ iterations, responseText }, 'Gemini thinking process');
+      
+      // 检查是否有工具调用
+      const { results, commands } = await executeTools(responseText);
 
-    if (output.newSessionId) {
-      sessions[group.folder] = output.newSessionId;
-      saveJson(path.join(DATA_DIR, 'sessions.json'), sessions);
-    }
+      if (results.length === 0) {
+        // 没有指令了，这就是最终回复
+        finalResponse = responseText;
+        break;
+      }
 
-    if (output.status === 'error') {
-      logger.error(
-        { group: group.name, error: output.error },
-        'Container agent error',
+      // 2. 优化中间执行过程的反馈格式
+      const statusUpdate = commands.map((cmd: any) => {
+        if (cmd.type === 'shell') return `⚙️ 执行命令: \`${cmd.command}\``;
+        if (cmd.type === 'write') return `📝 写入文件: \`${cmd.path}\``;
+        return `🛠️ 执行工具: ${cmd.type}`;
+      }).join('\n');
+
+      await sendMessage(
+        chatJid,
+        `⏳ [步骤 ${iterations}] 正在操作...\n${statusUpdate}`
       );
+
+      // 组装结果反馈给 Gemini
+      const observerOutput = results
+        .map(
+          (r, i) =>
+            `[OBSERVATION ${i + 1}]\n结果: ${r.success ? 'SUCCESS' : 'FAILED'}\n输出: ${r.output.slice(0, 1000)}`,
+        )
+        .join('\n\n');
+
+      currentPrompt = `${responseText}\n\n${observerOutput}\n\n请继续。`;
+    } catch (err) {
+      logger.error({ group: group.name, err }, 'Agent iteration error');
       return null;
     }
-
-    return output.result;
-  } catch (err) {
-    logger.error({ group: group.name, err }, 'Agent error');
-    return null;
   }
+
+  return finalResponse || '任务执行超时或未给出明确答复。';
 }
 
 async function sendMessage(jid: string, text: string): Promise<void> {
+  if (!sock) {
+    logger.warn({ jid }, 'Cannot send message: WhatsApp socket not connected');
+    return;
+  }
   try {
     await sock.sendMessage(jid, { text });
     logger.info({ jid, length: text.length }, 'Message sent');
@@ -650,12 +732,31 @@ async function processTaskIpc(
 }
 
 async function connectWhatsApp(): Promise<void> {
+  if (isConnecting) {
+    logger.debug('WhatsApp connection attempt already in progress, skipping...');
+    return;
+  }
+  isConnecting = true;
+
   const authDir = path.join(STORE_DIR, 'auth');
   fs.mkdirSync(authDir, { recursive: true });
 
+  // Close existing socket if any
+  if (sock) {
+    logger.info('Closing existing WhatsApp socket before reconnecting');
+    try {
+      sock.ev.removeAllListeners('connection.update');
+      sock.ev.removeAllListeners('creds.update');
+      sock.ev.removeAllListeners('messages.upsert');
+      sock.end(undefined);
+    } catch (err) {
+      logger.debug({ err }, 'Error closing existing socket');
+    }
+  }
+
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
-  sock = makeWASocket({
+  const currentSock = makeWASocket({
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, logger),
@@ -663,12 +764,19 @@ async function connectWhatsApp(): Promise<void> {
     printQRInTerminal: false,
     logger,
     browser: ['NanoClaw', 'Chrome', '1.0.0'],
+    connectTimeoutMs: 60000,
+    defaultQueryTimeoutMs: 60000,
+    keepAliveIntervalMs: 30000,
+    retryRequestDelayMs: 1000,
   });
 
-  sock.ev.on('connection.update', (update) => {
+  sock = currentSock;
+
+  currentSock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
+      isConnecting = false;
       const msg =
         'WhatsApp authentication required. Run /setup in Claude Code.';
       logger.error(msg);
@@ -679,30 +787,40 @@ async function connectWhatsApp(): Promise<void> {
     }
 
     if (connection === 'close') {
+      isConnecting = false;
       const reason = (lastDisconnect?.error as any)?.output?.statusCode;
       const shouldReconnect = reason !== DisconnectReason.loggedOut;
       logger.info({ reason, shouldReconnect }, 'Connection closed');
 
       if (shouldReconnect) {
-        logger.info('Reconnecting...');
-        connectWhatsApp();
+        const statusCode = Number(reason);
+        if (statusCode === DisconnectReason.connectionReplaced || statusCode === 440) {
+          logger.warn(
+            'Connection conflict detected. Waiting 15s before reconnecting to let other instances settle...',
+          );
+          setTimeout(() => connectWhatsApp(), 15000);
+        } else {
+          logger.info('Reconnecting...');
+          setTimeout(() => connectWhatsApp(), 2000);
+        }
       } else {
         logger.info('Logged out. Run /setup to re-authenticate.');
         process.exit(0);
       }
     } else if (connection === 'open') {
+      isConnecting = false;
       logger.info('Connected to WhatsApp');
-      
+
       // Build LID to phone mapping from auth state for self-chat translation
-      if (sock.user) {
-        const phoneUser = sock.user.id.split(':')[0];
-        const lidUser = sock.user.lid?.split(':')[0];
+      if (currentSock.user) {
+        const phoneUser = currentSock.user.id.split(':')[0];
+        const lidUser = currentSock.user.lid?.split(':')[0];
         if (lidUser && phoneUser) {
           lidToPhoneMap[lidUser] = `${phoneUser}@s.whatsapp.net`;
           logger.debug({ lidUser, phoneUser }, 'LID to phone mapping set');
         }
       }
-      
+
       // Sync group metadata on startup (respects 24h cache)
       syncGroupMetadata().catch((err) =>
         logger.error({ err }, 'Initial group sync failed'),
@@ -726,9 +844,9 @@ async function connectWhatsApp(): Promise<void> {
     }
   });
 
-  sock.ev.on('creds.update', saveCreds);
+  currentSock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('messages.upsert', ({ messages }) => {
+  currentSock.ev.on('messages.upsert', ({ messages }) => {
     for (const msg of messages) {
       if (!msg.message) continue;
       const rawJid = msg.key.remoteJid;
@@ -736,7 +854,7 @@ async function connectWhatsApp(): Promise<void> {
 
       // Translate LID JID to phone JID if applicable
       const chatJid = translateJid(rawJid);
-      
+
       const timestamp = new Date(
         Number(msg.messageTimestamp) * 1000,
       ).toISOString();
@@ -775,17 +893,15 @@ async function startMessageLoop(): Promise<void> {
       for (const msg of messages) {
         try {
           await processMessage(msg);
-          // Only advance timestamp after successful processing for at-least-once delivery
-          lastTimestamp = msg.timestamp;
-          saveState();
         } catch (err) {
           logger.error(
             { err, msg: msg.id },
-            'Error processing message, will retry',
+            'Error processing message',
           );
-          // Stop processing this batch - failed message will be retried next loop
-          break;
         }
+        // Always advance timestamp to prevent getting stuck on a failing message
+        lastTimestamp = msg.timestamp;
+        saveState();
       }
     } catch (err) {
       logger.error({ err }, 'Error in message loop');
@@ -835,6 +951,7 @@ function ensureContainerSystemRunning(): void {
 }
 
 async function main(): Promise<void> {
+  acquireLock();
   ensureContainerSystemRunning();
   initDatabase();
   logger.info('Database initialized');
