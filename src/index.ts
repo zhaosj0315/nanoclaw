@@ -287,6 +287,17 @@ async function processMessage(msg: NewMessage): Promise<void> {
     'New message received',
   );
 
+  // --- 关键修复：空消息过滤 ---
+  // 如果内容为空且没有媒体文件，直接忽略，防止 WhatsApp 系统消息或同步空消息触发重复回复。
+  const mediaDir = path.join(DATA_DIR, 'media');
+  const hasVoice = fs.existsSync(path.join(mediaDir, `voice_${msg.id}.ogg`));
+  const hasImage = fs.existsSync(path.join(mediaDir, `image_${msg.id}.jpg`));
+  
+  if (!content && !hasVoice && !hasImage) {
+    logger.debug({ msgId: msg.id }, 'Ignoring empty message with no media');
+    return;
+  }
+
   const isMainGroup = group.folder.toLowerCase() === MAIN_GROUP_FOLDER.toLowerCase();
   const isPrivateChat = msg.chat_jid.endsWith('@s.whatsapp.net');
 
@@ -434,16 +445,16 @@ async function processMessage(msg: NewMessage): Promise<void> {
       await sendReaction(msg.chat_jid, msgKey, '✅');
     }
 
-    // 如果用户发的是语音，且回复长度适中，则生成语音回复
+    // 统一使用引用的方式回复，并移除硬编码的“处理完毕”后缀，由 AI 自然结束
     if (hasUserAudio && response.length < 500) {
       const ttsPath = await generateTts(response);
       if (ttsPath) {
         await sendMessage(msg.chat_jid, response, { filePath: ttsPath, ptt: true, quoted: quotedMsg });
       } else {
-        await sendMessage(msg.chat_jid, `${ASSISTANT_NAME}: ${response}\n\n✅ 处理完毕。`, { quoted: quotedMsg });
+        await sendMessage(msg.chat_jid, `${ASSISTANT_NAME}: ${response}`, { quoted: quotedMsg });
       }
     } else {
-      await sendMessage(msg.chat_jid, `${ASSISTANT_NAME}: ${response}\n\n✅ 处理完毕。`, { quoted: quotedMsg });
+      await sendMessage(msg.chat_jid, `${ASSISTANT_NAME}: ${response}`, { quoted: quotedMsg });
     }
 
     // --- 异步记忆提炼 (不阻塞回复) ---
