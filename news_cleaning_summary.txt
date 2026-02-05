@@ -1,0 +1,6 @@
+News Cleaning Summary for 2026-02-06 (Refined):
+category
+FIFA          7
+CRICKET       3
+OLYMPICS      2
+MOTORSPORT    2

@@ -83,7 +83,7 @@ async function runTask(
     const geminiRes = await runLocalGemini(task.prompt, group.name);
     if (geminiRes.success && geminiRes.response) {
       result = geminiRes.response;
-      await deps.sendMessage(task.chat_jid, `[定时任务] ${group.name}:\n${result}`);
+      await deps.sendMessage(task.chat_jid, `[Scheduled Task] ${group.name}:\n${result}`);
     } else {
       error = geminiRes.error || 'Unknown Gemini error';
     }

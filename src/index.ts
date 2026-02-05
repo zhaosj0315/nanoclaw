@@ -172,6 +172,12 @@ function loadState(): void {
     last_agent_timestamp?: Record<string, string>;
   }>(statePath, {});
   lastTimestamp = state.last_timestamp || '';
+  
+  // --- 关键修复：重启即终止 ---
+  // 用户反馈重启后仍在处理历史消息。强制将 lastTimestamp 重置为当前时间，
+  // 忽略所有积压的历史消息，确保“重启”等于“清空状态”。
+  lastTimestamp = new Date().toISOString();
+  
   lastAgentTimestamp = state.last_agent_timestamp || {};
   sessions = loadJson(path.join(DATA_DIR, 'sessions.json'), {});
   registeredGroups = loadJson(
@@ -287,6 +293,15 @@ async function processMessage(msg: NewMessage): Promise<void> {
   // Skip trigger requirement if it's the main group, a private chat, or the trigger is present
   if (!isMainGroup && !isPrivateChat && !TRIGGER_PATTERN.test(content)) return;
 
+  // --- [UX 升级] 表情回应机制：已阅 ---
+  const msgKey = {
+    remoteJid: msg.chat_jid,
+    fromMe: msg.from_me,
+    id: msg.id,
+    participant: msg.sender
+  };
+  await sendReaction(msg.chat_jid, msgKey, '👀');
+
   // Use a sliding window of the last 50 messages for full context
   const recentMessages = getRecentMessages(msg.chat_jid, 50);
   const memories = getMemories(msg.chat_jid);
@@ -306,10 +321,11 @@ async function processMessage(msg: NewMessage): Promise<void> {
       ? m.content.replace(`${ASSISTANT_NAME}:`, '').trim()
       : m.content;
 
-    // 检查是否有对应的多模态文件并进行分析 (增加重试逻辑处理磁盘延迟)
+    // 检查是否有对应的多模态文件并进行分析
     const mediaDir = path.join(DATA_DIR, 'media');
     const voicePath = path.join(mediaDir, `voice_${m.id}.ogg`);
     const imagePath = path.join(mediaDir, `image_${m.id}.jpg`);
+    const analysisCachePath = path.join(mediaDir, `analysis_${m.id}.json`);
     
     // 语音处理
     if (fs.existsSync(voicePath)) {
@@ -317,7 +333,16 @@ async function processMessage(msg: NewMessage): Promise<void> {
         hasUserAudio = true;
         activeMediaFiles.push(voicePath);
       }
-      const analysis = await analyzeMedia(voicePath);
+      
+      let analysis;
+      if (fs.existsSync(analysisCachePath)) {
+        // 读取缓存，避免重复分析
+        analysis = loadJson<any>(analysisCachePath, null);
+      } else {
+        analysis = await analyzeMedia(voicePath);
+        if (analysis) saveJson(analysisCachePath, analysis);
+      }
+
       if (analysis) {
         cleanContent += `\n[系统多模态分析: ${analysis.description}]`;
       }
@@ -326,7 +351,15 @@ async function processMessage(msg: NewMessage): Promise<void> {
     // 图片处理
     if (fs.existsSync(imagePath)) {
       if (!isBot) activeMediaFiles.push(imagePath);
-      const analysis = await analyzeMedia(imagePath);
+
+      let analysis;
+      if (fs.existsSync(analysisCachePath)) {
+        analysis = loadJson<any>(analysisCachePath, null);
+      } else {
+        analysis = await analyzeMedia(imagePath);
+        if (analysis) saveJson(analysisCachePath, analysis);
+      }
+
       if (analysis) {
         cleanContent += `\n[系统视觉扫描: ${analysis.description}]`;
       }
@@ -353,14 +386,20 @@ async function processMessage(msg: NewMessage): Promise<void> {
     'Processing message with native multimodal support',
   );
 
-  // 1. 发送即时确认，避免用户焦虑
-  await sendMessage(msg.chat_jid, `🐾 @${ASSISTANT_NAME} 正在处理您的请求...`);
+  // --- [UX 升级] 表情回应机制：处理中 ---
+  await sendReaction(msg.chat_jid, msgKey, '⏳');
   
+  // 构造引用对象 (用于后续所有回复)
+  const quotedMsg = {
+    key: msgKey,
+    message: { conversation: msg.content } // 这里的构造有助于界面显示被引用的文字
+  };
+
   // 开启打字状态心跳
   const typingInterval = setInterval(() => setTyping(msg.chat_jid, true), 5000);
   await setTyping(msg.chat_jid, true);
 
-  const response = await runAgent(group, prompt, msg.chat_jid, finalMediaFiles);
+  const response = await runAgent(group, prompt, msg.chat_jid, finalMediaFiles, quotedMsg);
   
   clearInterval(typingInterval);
   await setTyping(msg.chat_jid, false);
@@ -368,16 +407,23 @@ async function processMessage(msg: NewMessage): Promise<void> {
   if (response) {
     lastAgentTimestamp[msg.chat_jid] = msg.timestamp;
     
+    // --- [UX 升级] 任务完成反馈 ---
+    if (response.includes('🛑')) {
+      await sendReaction(msg.chat_jid, msgKey, '🛑');
+    } else {
+      await sendReaction(msg.chat_jid, msgKey, '✅');
+    }
+
     // 如果用户发的是语音，且回复长度适中，则生成语音回复
     if (hasUserAudio && response.length < 500) {
       const ttsPath = await generateTts(response);
       if (ttsPath) {
-        await sendMessage(msg.chat_jid, response, { filePath: ttsPath, ptt: true });
+        await sendMessage(msg.chat_jid, response, { filePath: ttsPath, ptt: true, quoted: quotedMsg });
       } else {
-        await sendMessage(msg.chat_jid, `${ASSISTANT_NAME}: ${response}\n\n✅ 处理完毕。`);
+        await sendMessage(msg.chat_jid, `${ASSISTANT_NAME}: ${response}\n\n✅ 处理完毕。`, { quoted: quotedMsg });
       }
     } else {
-      await sendMessage(msg.chat_jid, `${ASSISTANT_NAME}: ${response}\n\n✅ 处理完毕。`);
+      await sendMessage(msg.chat_jid, `${ASSISTANT_NAME}: ${response}\n\n✅ 处理完毕。`, { quoted: quotedMsg });
     }
 
     // --- 异步记忆提炼 (不阻塞回复) ---
@@ -414,12 +460,13 @@ async function runAgent(
   initialPrompt: string,
   chatJid: string,
   mediaFiles: string[] = [],
+  quotedMsg?: any,
 ): Promise<string | null> {
   const { executeTools } = await import('./tool-executor.js');
   let currentPrompt = initialPrompt;
   let finalResponse = '';
   let iterations = 0;
-  const MAX_ITERATIONS = 15;
+  const MAX_ITERATIONS = 30; // 增加上限以应对复杂任务
   const taskStartTime = Date.now(); // 记录任务开始时间
 
   while (iterations < MAX_ITERATIONS) {
@@ -447,21 +494,26 @@ async function runAgent(
       // 检查是否有工具调用
       const { results, commands } = await executeTools(responseText);
 
-      // --- 关键增强：处理中间指令 (特别是 SEND_FILE 和 TTS_SEND) ---
+      // --- 关键增强：处理中间指令 (特别是 SEND_FILE, TTS_SEND, SHOW_MENU) ---
+      let menuShown = false;
       for (const cmd of commands) {
         if (cmd.type === 'send_file' && cmd.path) {
-          await sendMessage(chatJid, '📦 正在为您回传文件...', { filePath: cmd.path });
+          await sendMessage(chatJid, '📦 正在为您回传文件...', { filePath: cmd.path, quoted: quotedMsg });
         } else if (cmd.type === 'tts_send' && cmd.text) {
           const ttsPath = await generateTts(cmd.text);
           if (ttsPath) {
-            await sendMessage(chatJid, '', { filePath: ttsPath, ptt: true });
+            await sendMessage(chatJid, '', { filePath: ttsPath, ptt: true, quoted: quotedMsg });
           }
+        } else if (cmd.type === 'show_menu' && cmd.text && cmd.options) {
+          await sendMessage(chatJid, cmd.text, { buttons: cmd.options, quoted: quotedMsg });
+          menuShown = true;
         }
       }
 
-      if (results.length === 0) {
-        // 没有指令了，这就是最终回复
-        finalResponse = responseText;
+      if (results.length === 0 || menuShown) {
+        // 没有指令了，或者已经展示了菜单（交回控制权），直接结束
+        if (menuShown) logger.info({ iterations }, 'Menu shown, stopping agent loop');
+        finalResponse = menuShown ? '' : responseText; // 菜单本身就是回复，不需要额外文本
         break;
       }
 
@@ -470,10 +522,11 @@ async function runAgent(
       const emptyChar = '◯';
       const barLength = 10;
       
-      // 动态进度计算：前 5 步进度感更快，10 步以后趋于平缓
-      let displayPercent = Math.round((iterations / 10) * 100);
-      if (iterations >= 10) displayPercent = 90 + (iterations - 10);
-      displayPercent = Math.min(displayPercent, 99); // 最终一步才到 100
+      // 动态进度计算：根据步数阶梯式增长，给用户稳定的预期
+      let displayPercent = 0;
+      if (iterations <= 3) displayPercent = iterations * 15; // 15%, 30%, 45%
+      else if (iterations <= 8) displayPercent = 45 + (iterations - 3) * 7; // 52% - 80%
+      else displayPercent = Math.min(80 + (iterations - 8) * 2, 98); // 82% -> 98%
 
       const progressBlocks = Math.min(Math.floor((displayPercent / 100) * barLength), barLength);
       const progressBar = filledChar.repeat(progressBlocks) + emptyChar.repeat(barLength - progressBlocks);
@@ -497,11 +550,12 @@ async function runAgent(
         chatJid,
         `🐾 *NanoClaw 任务执行中...*\n\n` +
         `进度: ${progressBar}  ${displayPercent}%\n` +
-        `步骤: ${iterations} / ${MAX_ITERATIONS}\n` +
+        `步骤: ${iterations} (执行上限已提升)\n` +
         `──────────────────\n` +
         `${statusUpdate}\n` +
         `──────────────────\n` +
-        `_正在思考下一步动作..._`
+        `_正在思考下一步动作..._`,
+        { quoted: quotedMsg }
       );
 
       // 组装结果反馈给 Gemini
@@ -522,31 +576,56 @@ async function runAgent(
   return finalResponse || '任务执行超时或未给出明确答复。';
 }
 
-async function sendMessage(jid: string, text: string, options: { filePath?: string, ptt?: boolean } = {}): Promise<void> {
+/**
+ * 发送消息表情回应 (Reaction)
+ */
+async function sendReaction(jid: string, messageKey: any, emoji: string): Promise<void> {
+  if (!sock) return;
+  try {
+    await sock.sendMessage(jid, {
+      react: {
+        text: emoji,
+        key: messageKey
+      }
+    });
+  } catch (err) {
+    logger.debug({ emoji, err }, 'Failed to send reaction');
+  }
+}
+
+async function sendMessage(jid: string, text: string, options: { filePath?: string, ptt?: boolean, buttons?: string[], quoted?: any } = {}): Promise<void> {
   if (!sock) {
     logger.warn({ jid }, 'Cannot send message: WhatsApp socket not connected');
     return;
   }
   try {
+    const sendOptions = options.quoted ? { quoted: options.quoted } : {};
+
     if (options.filePath && fs.existsSync(options.filePath)) {
+      // 多媒体发送逻辑
       const ext = path.extname(options.filePath).toLowerCase();
       const fileName = path.basename(options.filePath);
 
       if (['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
-        await sock.sendMessage(jid, { image: { url: options.filePath }, caption: text });
+        await sock.sendMessage(jid, { image: { url: options.filePath }, caption: text }, sendOptions);
       } else if (options.ptt || ext === '.ogg' || ext === '.mp3') {
-        await sock.sendMessage(jid, { audio: { url: options.filePath }, ptt: true });
-        // 发送语音后如果还有文本，另外补发一条
+        await sock.sendMessage(jid, { audio: { url: options.filePath }, ptt: true }, sendOptions);
         if (text && !text.includes(ASSISTANT_NAME)) {
-          await sock.sendMessage(jid, { text });
+          await sock.sendMessage(jid, { text }, sendOptions);
         }
       } else {
-        // 默认作为文档发送
-        await sock.sendMessage(jid, { document: { url: options.filePath }, fileName, caption: text, mimetype: 'application/octet-stream' });
+        await sock.sendMessage(jid, { document: { url: options.filePath }, fileName, caption: text, mimetype: 'application/octet-stream' }, sendOptions);
       }
       logger.info({ jid, filePath: options.filePath }, 'Media message sent');
-    } else {
-      await sock.sendMessage(jid, { text });
+    } 
+    else if (options.buttons && options.buttons.length > 0) {
+      const buttonText = options.buttons.map((b, i) => `[${i + 1}] ${b}`).join('\n');
+      const footer = '\n\n提示：直接回复编号或点击按钮（如适用）';
+      await sock.sendMessage(jid, { text: `${text}\n\n${buttonText}${footer}` }, sendOptions);
+      logger.info({ jid, buttonsCount: options.buttons.length }, 'Button message sent');
+    }
+    else {
+      await sock.sendMessage(jid, { text }, sendOptions);
       logger.info({ jid, length: text.length }, 'Text message sent');
     }
   } catch (err) {

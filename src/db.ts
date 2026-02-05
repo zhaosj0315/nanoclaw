@@ -101,7 +101,7 @@ export function storeMessage(msg: any, chatJid: string, fromMe: boolean, senderN
   const id = msg.key.id;
   const senderJid = msg.key.participant || msg.key.remoteJid;
   
-  // 增强型内容提取：支持纯文本、带格式文本、图片/视频/文档的说明文字 (caption)
+  // Enhanced content extraction: supports plain text, formatted text, captions for images/videos/docs
   const message = msg.message;
   let content = '';
 
@@ -116,13 +116,13 @@ export function storeMessage(msg: any, chatJid: string, fromMe: boolean, senderN
       message.viewOnceMessageV2?.message?.videoMessage?.caption ||
       '';
 
-    // 如果内容为空但存在多媒体，添加占位符以便 AI 感知
+    // If content is empty but media exists, add a placeholder for AI awareness
     if (!content) {
-      if (message.imageMessage || message.viewOnceMessageV2?.message?.imageMessage) content = '[图片消息/IMAGE]';
-      else if (message.videoMessage || message.viewOnceMessageV2?.message?.videoMessage) content = '[视频消息/VIDEO]';
-      else if (message.documentMessage) content = `[文档消息/DOCUMENT: ${message.documentMessage.fileName || 'unknown'}]`;
-      else if (message.audioMessage) content = '[语音消息/AUDIO]';
-      else if (message.stickerMessage) content = '[表情包/STICKER]';
+      if (message.imageMessage || message.viewOnceMessageV2?.message?.imageMessage) content = '[IMAGE]';
+      else if (message.videoMessage || message.viewOnceMessageV2?.message?.videoMessage) content = '[VIDEO]';
+      else if (message.documentMessage) content = `[DOCUMENT: ${message.documentMessage.fileName || 'unknown'}]`;
+      else if (message.audioMessage) content = '[AUDIO]';
+      else if (message.stickerMessage) content = '[STICKER]';
     }
   }
 

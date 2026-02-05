@@ -10,12 +10,13 @@ export interface ToolResult {
 }
 
 export interface ParsedCommand {
-  type: 'shell' | 'write' | 'send_file' | 'search_knowledge' | 'list_knowledge' | 'tts_send' | 'ingest_file';
+  type: 'shell' | 'write' | 'send_file' | 'search_knowledge' | 'list_knowledge' | 'tts_send' | 'ingest_file' | 'show_menu';
   command?: string;
   path?: string;
   content?: string;
   query?: string;
   text?: string;
+  options?: string[];
 }
 
 /**
@@ -64,6 +65,7 @@ export async function executeTools(
   const listKnowledgeRegex = /\[LIST_KNOWLEDGE\]/g;
   const ttsSendRegex = /\[TTS_SEND:\s*([\s\S]+?)\]/g;
   const ingestFileRegex = /\[INGEST_FILE:\s*(.+?)\]/g;
+  const showMenuRegex = /\[SHOW_MENU:\s*(.+?)\s*\|\s*(.+?)\]/g;
 
   const results: ToolResult[] = [];
   const commands: ParsedCommand[] = [];
@@ -201,6 +203,15 @@ export async function executeTools(
       const result = await ingestFileToKnowledgeBase(filePath);
       results.push(result);
     }
+  }
+
+  // 处理 SHOW_MENU 指令
+  while ((match = showMenuRegex.exec(text)) !== null) {
+    const menuTitle = match[1];
+    const options = match[2].split('|').map(o => o.trim());
+    commands.push({ type: 'show_menu', text: menuTitle, options });
+    logger.info({ menuTitle, optionsCount: options.length }, 'AI requested menu display');
+    results.push({ success: true, output: '交互式菜单已展示给用户。' });
   }
 
   return { newText: text, results, commands };
