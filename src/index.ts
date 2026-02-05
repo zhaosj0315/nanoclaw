@@ -919,7 +919,8 @@ async function connectWhatsApp(): Promise<void> {
 
       // --- 紧急制动逻辑 (STOP Command) ---
       const messageContent = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
-      if (messageContent.trim() === '/stop' || messageContent.trim() === '🛑') {
+      const cleanCmd = messageContent.trim().toLowerCase();
+      if (cleanCmd === 'stop' || cleanCmd === '/stop' || cleanCmd === '🛑') {
         logger.warn({ chatJid }, '🛑 EMERGENCY STOP RECEIVED - Clearing Queue');
         globalInterruptTimestamp = Date.now();
         
