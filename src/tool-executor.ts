@@ -10,7 +10,7 @@ export interface ToolResult {
 }
 
 export interface ParsedCommand {
-  type: 'shell' | 'write' | 'send_file' | 'search_knowledge' | 'list_knowledge' | 'tts_send';
+  type: 'shell' | 'write' | 'send_file' | 'search_knowledge' | 'list_knowledge' | 'tts_send' | 'ingest_file';
   command?: string;
   path?: string;
   content?: string;
@@ -63,6 +63,7 @@ export async function executeTools(
   const searchKnowledgeRegex = /\[SEARCH_KNOWLEDGE:\s*(.+?)\]/g;
   const listKnowledgeRegex = /\[LIST_KNOWLEDGE\]/g;
   const ttsSendRegex = /\[TTS_SEND:\s*([\s\S]+?)\]/g;
+  const ingestFileRegex = /\[INGEST_FILE:\s*(.+?)\]/g;
 
   const results: ToolResult[] = [];
   const commands: ParsedCommand[] = [];
@@ -187,7 +188,79 @@ export async function executeTools(
     results.push({ success: true, output: '语音消息已加入发送队列。' });
   }
 
+  // 处理 INGEST_FILE 指令
+  while ((match = ingestFileRegex.exec(text)) !== null) {
+    const filePath = match[1];
+    commands.push({ type: 'ingest_file', path: filePath });
+    logger.info({ filePath }, 'AI requested knowledge ingestion');
+
+    const check = isPathAuthorized(filePath);
+    if (!check.authorized) {
+      results.push({ success: false, output: `[SECURITY REJECTED] ${check.reason}` });
+    } else {
+      const result = await ingestFileToKnowledgeBase(filePath);
+      results.push(result);
+    }
+  }
+
   return { newText: text, results, commands };
+}
+
+/**
+ * 知识摄入核心逻辑：将 PDF/DOCX/TXT 转化为知识库中的文本
+ */
+async function ingestFileToKnowledgeBase(sourcePath: string): Promise<ToolResult> {
+  try {
+    if (!fs.existsSync(sourcePath)) {
+      return { success: false, output: `文件不存在: ${sourcePath}` };
+    }
+
+    const kbPath = path.join(process.cwd(), 'data', 'knowledge_base');
+    if (!fs.existsSync(kbPath)) fs.mkdirSync(kbPath, { recursive: true });
+
+    const ext = path.extname(sourcePath).toLowerCase();
+    const baseName = path.basename(sourcePath, ext);
+    const targetPath = path.join(kbPath, `${baseName}.txt`);
+    
+    let extractedText = '';
+
+    if (ext === '.pdf') {
+      const pdfModule = await import('pdf-parse');
+      // 处理 pdf-parse 复杂的导出模式
+      const pdf = (pdfModule as any).default || pdfModule;
+      const dataBuffer = fs.readFileSync(sourcePath);
+      const data = await pdf(dataBuffer);
+      extractedText = data.text;
+    } 
+    else if (ext === '.docx') {
+      const mammoth = await import('mammoth');
+      const result = await mammoth.extractRawText({ path: sourcePath });
+      extractedText = result.value;
+    }
+    else if (['.txt', '.md', '.ts', '.js', '.py', '.json'].includes(ext)) {
+      extractedText = fs.readFileSync(sourcePath, 'utf-8');
+    }
+    else {
+      return { success: false, output: `暂不支持的文件格式: ${ext}` };
+    }
+
+    if (!extractedText.trim()) {
+      return { success: false, output: '未能从文件中提取到有效文本内容。' };
+    }
+
+    // 加上元数据头
+    const contentWithMeta = `--- SOURCE: ${sourcePath} ---\n--- INGESTED: ${new Date().toISOString()} ---\n\n${extractedText}`;
+    fs.writeFileSync(targetPath, contentWithMeta);
+
+    return { 
+      success: true, 
+      output: `成功摄入知识库！文件已转化为文本并保存至: ${targetPath} (${(extractedText.length / 1024).toFixed(1)} KB)` 
+    };
+
+  } catch (err: any) {
+    logger.error({ err, sourcePath }, 'Ingestion failed');
+    return { success: false, output: `摄入失败: ${err.message}` };
+  }
 }
 
 function runShell(command: string): Promise<ToolResult> {
