@@ -408,10 +408,9 @@ async function processMessage(msg: NewMessage): Promise<void> {
         // 读取缓存，避免重复分析
         analysis = loadJson<any>(analysisCachePath, null);
       } else {
-        // 仅对最近 10 分钟内的消息进行实时分析，避免重启后对历史记录进行风暴式分析
-        const msgTime = new Date(m.timestamp).getTime();
-        const now = Date.now();
-        if (now - msgTime < 10 * 60 * 1000) {
+        // 关键优化：仅对当前那条触发消息进行实时分析
+        // 历史消息只读缓存，如果没缓存就跳过，避免重启后对历史记录进行风暴式分析
+        if (m.id === msg.id) {
           analysis = await analyzeMedia(voicePath);
           if (analysis) saveJson(analysisCachePath, analysis);
         }
@@ -419,6 +418,8 @@ async function processMessage(msg: NewMessage): Promise<void> {
 
       if (analysis) {
         cleanContent += `\n[系统多模态分析: ${analysis.description}]`;
+      } else if (!isBot) {
+        cleanContent += `\n[历史语音消息 (未分析)]`;
       }
     }
 
@@ -430,10 +431,8 @@ async function processMessage(msg: NewMessage): Promise<void> {
       if (fs.existsSync(analysisCachePath)) {
         analysis = loadJson<any>(analysisCachePath, null);
       } else {
-        // 仅对最近 10 分钟内的消息进行实时分析
-        const msgTime = new Date(m.timestamp).getTime();
-        const now = Date.now();
-        if (now - msgTime < 10 * 60 * 1000) {
+        // 关键优化：仅对当前那条触发消息进行实时分析
+        if (m.id === msg.id) {
           analysis = await analyzeMedia(imagePath);
           if (analysis) saveJson(analysisCachePath, analysis);
         }
@@ -441,6 +440,8 @@ async function processMessage(msg: NewMessage): Promise<void> {
 
       if (analysis) {
         cleanContent += `\n[系统视觉扫描: ${analysis.description}]`;
+      } else if (!isBot) {
+        cleanContent += `\n[历史图片 (未分析)]`;
       }
     }
 
@@ -1106,6 +1107,15 @@ async function connectWhatsApp(): Promise<void> {
   }
 
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
+
+  // --- 物理静默：拦截底层库的非结构化打印 ---
+  const originalLog = console.log;
+  const originalDebug = console.debug;
+  // 仅在初始化期间暂时屏蔽，防止 SessionEntry 等乱码刷屏
+  console.log = (...args) => {
+    if (args[0] && typeof args[0] === 'string' && (args[0].includes('SessionEntry') || args[0].includes('Closing session'))) return;
+    originalLog(...args);
+  };
 
   const currentSock = makeWASocket({
     auth: {
