@@ -1,6 +1,17 @@
-
 import matplotlib.pyplot as plt
+import matplotlib
 import numpy as np
+import platform
+
+# Set font for Chinese characters based on OS
+system_name = platform.system()
+if system_name == 'Darwin':  # macOS
+    plt.rcParams['font.sans-serif'] = ['Arial Unicode MS']
+elif system_name == 'Windows':
+    plt.rcParams['font.sans-serif'] = ['SimHei']
+else:
+    plt.rcParams['font.sans-serif'] = ['WenQuanYi Micro Hei']
+plt.rcParams['axes.unicode_minus'] = False
 
 def simulate_i29_traffic():
     # Simulation parameters
@@ -23,17 +34,17 @@ def simulate_i29_traffic():
     shuttle_time = np.minimum(intervention_traffic, 40) # Shuttles use priority lanes
     
     plt.figure(figsize=(12, 7))
-    plt.plot(hours, baseline_traffic, label='Normal Traffic (Baseline)', linestyle='--', color='gray')
-    plt.plot(hours, wc_traffic, label='World Cup Traffic (No Action)', color='red', linewidth=2)
-    plt.plot(hours, intervention_traffic, label='With AI Diversion (General Flow)', color='orange')
-    plt.plot(hours, shuttle_time, label='Shuttle Travel Time (Priority)', color='green', linewidth=3)
+    plt.plot(hours, baseline_traffic, label='常态交通 (基线)', linestyle='--', color='gray')
+    plt.plot(hours, wc_traffic, label='世界杯流量 (无干预)', color='red', linewidth=2)
+    plt.plot(hours, intervention_traffic, label='AI 分流策略 (普通车流)', color='orange')
+    plt.plot(hours, shuttle_time, label='穿梭巴士 (优先道)', color='green', linewidth=3)
     
-    plt.axhline(y=45, color='black', linestyle=':', label='Max Acceptable Delay (45m)')
+    plt.axhline(y=45, color='black', linestyle=':', label='最大可接受延迟 (45分钟)')
     plt.fill_between(hours, 45, wc_traffic, where=(wc_traffic > 45), color='red', alpha=0.1)
     
-    plt.title('I-29 Corridor Traffic Simulation: KCI to Stadium (FIFA 2026)', fontsize=14)
-    plt.xlabel('Hour of Day', fontsize=12)
-    plt.ylabel('Travel Time (Minutes)', fontsize=12)
+    plt.title('I-29 走廊交通仿真：KCI 机场至体育场 (2026 世界杯)', fontsize=14)
+    plt.xlabel('时间 (24小时制)', fontsize=12)
+    plt.ylabel('通行耗时 (分钟)', fontsize=12)
     plt.legend()
     plt.grid(True, alpha=0.3)
     

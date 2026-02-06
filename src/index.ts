@@ -514,9 +514,15 @@ async function processMessage(msg: NewMessage): Promise<void> {
     // --- 异步记忆提炼 (不阻塞回复) ---
     (async () => {
       try {
-        const memoryPrompt = `以下是最近的一段对话。请只关注【用户】(USER) 提供的新信息、偏好或指令。
-        请【忽略】助手(ASSISTANT) 的回复内容，也不要记录日期/时间等常识性信息。
-        判断是否有值得长期记忆的用户事实。如果有，请列出；如果没有，请回复 "NONE"。
+        const memoryPrompt = `以下是最近的一段对话。请只关注【用户】(USER) 提供的新信息、材料或明确的指令事实。
+        
+        【硬性红线】：
+        1. 严禁记录用户的沟通方式（如：用户发了语音、用户发了图）。
+        2. 严禁将单次工具请求（如：画个图、发个Excel）记录为偏好。
+        3. 不要记录日期/时间等常识。
+        4. 只有当用户明确表达长期意图（如：“我以后都要看到XX数据”）时，才记录偏好。
+        
+        判断是否有值得长期记忆的客观事实。如果有，请列出；如果没有，请回复 "NONE"。
         
         对话内容：
         ${historyContext}
@@ -582,9 +588,16 @@ async function runAgent(
 
       // --- 关键增强：处理中间指令 (特别是 SEND_FILE, TTS_SEND, SHOW_MENU) ---
       let menuShown = false;
+      let filesSentCount = 0;
       for (const cmd of commands) {
         if (cmd.type === 'send_file' && cmd.path) {
-          await sendMessage(chatJid, '📦 正在为您回传文件...', { filePath: cmd.path, quoted: quotedMsg });
+          if (filesSentCount < 3) {
+            await sendMessage(chatJid, '📦 正在为您回传文件...', { filePath: cmd.path, quoted: quotedMsg });
+            filesSentCount++;
+          } else if (filesSentCount === 3) {
+            logger.warn('File limit reached, suppressing further attachments');
+            filesSentCount++; // 防止重复提示
+          }
         } else if (cmd.type === 'tts_send' && cmd.text) {
           const ttsPath = await generateTts(cmd.text);
           if (ttsPath) {
@@ -1097,10 +1110,10 @@ async function connectWhatsApp(): Promise<void> {
   const currentSock = makeWASocket({
     auth: {
       creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, logger),
+      keys: makeCacheableSignalKeyStore(state.keys, logger.child({ level: 'silent' }) as any),
     },
     printQRInTerminal: false,
-    logger,
+    logger: logger.child({ level: 'silent' }) as any,
     browser: ['zhaosj的助手', 'Chrome', '1.0.0'],
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
