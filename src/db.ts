@@ -118,11 +118,11 @@ export function storeMessage(msg: any, chatJid: string, fromMe: boolean, senderN
 
     // If content is empty but media exists, add a placeholder for AI awareness
     if (!content) {
-      if (message.imageMessage || message.viewOnceMessageV2?.message?.imageMessage) content = '[IMAGE]';
-      else if (message.videoMessage || message.viewOnceMessageV2?.message?.videoMessage) content = '[VIDEO]';
-      else if (message.documentMessage) content = `[DOCUMENT: ${message.documentMessage.fileName || 'unknown'}]`;
-      else if (message.audioMessage) content = '[AUDIO]';
-      else if (message.stickerMessage) content = '[STICKER]';
+      if (message.imageMessage || message.viewOnceMessageV2?.message?.imageMessage) content = '🐾 [IMAGE]';
+      else if (message.videoMessage || message.viewOnceMessageV2?.message?.videoMessage) content = '🐾 [VIDEO]';
+      else if (message.documentMessage) content = `🐾 [DOCUMENT: ${message.documentMessage.fileName || 'unknown'}]`;
+      else if (message.audioMessage) content = '🐾 [AUDIO]';
+      else if (message.stickerMessage) content = '🐾 [STICKER]';
     }
   }
 

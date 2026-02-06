@@ -283,8 +283,8 @@ async function processMessage(msg: NewMessage): Promise<void> {
   const group = registeredGroups[msg.chat_jid];
   if (!group) return;
 
-  // Only skip if it's a known bot response format to prevent loops
-  // Allows processing self-sent messages for testing/debugging
+  // 关键修复：允许处理 from_me 消息（支持私聊），但严格排除助手发出的内容
+  // 排除：以 🐾 开头的消息（包括新的多媒体占位符）或以助手名开头的文本
   if (msg.from_me && (msg.content.startsWith('🐾') || msg.content.startsWith(`${ASSISTANT_NAME}:`))) {
     return;
   }
@@ -515,18 +515,23 @@ async function processMessage(msg: NewMessage): Promise<void> {
     // --- 异步记忆提炼 (不阻塞回复) ---
     (async () => {
       try {
-        const memoryPrompt = `以下是最近的一段对话。请只关注【用户】(USER) 提供的新信息、材料或明确的指令事实。
+        // 关键优化：只把【用户】说的话发给记忆引擎，彻底杜绝助手“自学废话”
+        const userOnlyHistory = recentMessages
+          .filter(m => !m.from_me && !m.content.startsWith(`${ASSISTANT_NAME}:`))
+          .map(m => `USER: ${m.content}`)
+          .join('\n');
+
+        if (!userOnlyHistory) return; // 如果没有用户新信息，直接不跑记忆引擎
+
+        const memoryPrompt = `以下是用户最新提供的指令或信息。请判断其中是否包含值得长期记住的【硬事实】或【明确材料】。
         
         【硬性红线】：
-        1. 严禁记录用户的沟通方式（如：用户发了语音、用户发了图）。
-        2. 严禁将单次工具请求（如：画个图、发个Excel）记录为偏好。
-        3. 不要记录日期/时间等常识。
-        4. 只有当用户明确表达长期意图（如：“我以后都要看到XX数据”）时，才记录偏好。
+        1. 严禁记录任何关于助手(ASSISTANT)的回复或动作。
+        2. 不要记录沟通方式（语音/文字）。
+        3. 不要记录日期/时间。
         
-        判断是否有值得长期记忆的客观事实。如果有，请列出；如果没有，请回复 "NONE"。
-        
-        对话内容：
-        ${historyContext}
+        用户内容：
+        ${userOnlyHistory}
         
         现有记忆：
         ${memories.map(m => m.fact).join('\n')}
@@ -589,20 +594,23 @@ async function runAgent(
 
       // --- 关键增强：处理中间指令 (特别是 SEND_FILE, TTS_SEND, SHOW_MENU) ---
       let menuShown = false;
+      let actionExecuted = false; // 动作执行标记
       let filesSentCount = 0;
       for (const cmd of commands) {
         if (cmd.type === 'send_file' && cmd.path) {
           if (filesSentCount < 3) {
             await sendMessage(chatJid, '📦 正在为您回传文件...', { filePath: cmd.path, quoted: quotedMsg });
             filesSentCount++;
+            actionExecuted = true;
           } else if (filesSentCount === 3) {
             logger.warn('File limit reached, suppressing further attachments');
-            filesSentCount++; // 防止重复提示
+            filesSentCount++; 
           }
         } else if (cmd.type === 'tts_send' && cmd.text) {
           const ttsPath = await generateTts(cmd.text);
           if (ttsPath) {
             await sendMessage(chatJid, '', { filePath: ttsPath, ptt: true, quoted: quotedMsg });
+            actionExecuted = true;
           }
         } else if (cmd.type === 'show_menu' && cmd.text && cmd.options && !menuShown) {
           // 仅展示第一个菜单，防止 AI 话多连弹
@@ -617,11 +625,14 @@ async function runAgent(
         }
       }
 
-      if (results.length === 0 || menuShown) {
-        // 没有指令了，或者已经展示了菜单（交回控制权），直接结束
+      if (results.length === 0 || menuShown || actionExecuted) {
+        // 关键逻辑：如果是菜单展示或已执行了关键动作（发语音/发文件），直接熔断退出，严禁进入下一轮思考
         if (menuShown) {
           logger.info({ iterations }, 'Menu shown, stopping agent loop');
           finalResponse = '__MENU_SHOWN__'; 
+        } else if (actionExecuted) {
+          logger.info({ iterations }, 'Action executed, enforcing silent completion');
+          finalResponse = '__SILENT_FINISH__';
         } else {
           finalResponse = responseText;
         }
@@ -667,7 +678,7 @@ async function runAgent(
     }
   }
 
-  if (finalResponse === '__MENU_SHOWN__') return '';
+  if (finalResponse === '__MENU_SHOWN__' || finalResponse === '__SILENT_FINISH__') return '';
   return finalResponse || '任务执行超时或未给出明确答复。';
 }
 
@@ -1108,13 +1119,24 @@ async function connectWhatsApp(): Promise<void> {
 
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
-  // --- 物理静默：拦截底层库的非结构化打印 ---
-  const originalLog = console.log;
-  const originalDebug = console.debug;
-  // 仅在初始化期间暂时屏蔽，防止 SessionEntry 等乱码刷屏
-  console.log = (...args) => {
-    if (args[0] && typeof args[0] === 'string' && (args[0].includes('SessionEntry') || args[0].includes('Closing session'))) return;
-    originalLog(...args);
+  // --- 极致静默：拦截底层 stdout/stderr 打印 ---
+  const filter = (chunk: any) => {
+    const str = chunk.toString();
+    return str.includes('SessionEntry') || str.includes('Closing session') || str.includes('currentRatchet') || str.includes('_chains');
+  };
+
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  // @ts-ignore
+  process.stdout.write = (chunk, encoding, callback) => {
+    if (filter(chunk)) return true;
+    return originalWrite(chunk, encoding, callback);
+  };
+
+  const originalErrWrite = process.stderr.write.bind(process.stderr);
+  // @ts-ignore
+  process.stderr.write = (chunk, encoding, callback) => {
+    if (filter(chunk)) return true;
+    return originalErrWrite(chunk, encoding, callback);
   };
 
   const currentSock = makeWASocket({
