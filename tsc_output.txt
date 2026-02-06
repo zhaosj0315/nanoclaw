@@ -1,4 +1,0 @@
-src/db.ts(109,41): error TS1005: ']' expected.
-src/task-scheduler.ts(58,14): error TS1127: Invalid character.
-src/task-scheduler.ts(58,15): error TS1136: Property assignment expected.
-src/task-scheduler.ts(86,63): error TS1160: Unterminated template literal.
