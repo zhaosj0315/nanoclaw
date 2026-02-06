@@ -1,9 +1,1 @@
 
-> nanoclaw@1.0.0 build
-> tsc
-
-src/db.ts(83,16): error TS1127: Invalid character.
-src/db.ts(111,41): error TS1160: Unterminated template literal.
-src/task-scheduler.ts(58,14): error TS1127: Invalid character.
-src/task-scheduler.ts(58,15): error TS1136: Property assignment expected.
-src/task-scheduler.ts(86,63): error TS1160: Unterminated template literal.

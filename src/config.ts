@@ -43,3 +43,10 @@ export function escapeRegex(str: string): string {
 
 export const TRIGGER_PATTERN = new RegExp(`^@(${escapeRegex(ASSISTANT_NAME)}|小助手)\\b`, 'i');
 export const TIMEZONE = process.env.TZ || 'Asia/Shanghai';
+
+// Beijing Tech Brief Alignment (2026-02-06)
+export const TASK_FLOW_CONFIG = {
+  VLM_PRIORITY: 'high',
+  USE_EMBODIED_AI: true,
+  LIQUID_COOLING_COMPLIANCE: true,
+};

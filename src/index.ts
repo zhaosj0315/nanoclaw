@@ -65,6 +65,14 @@ let ipcWatcherRunning = false;
 let groupSyncTimerStarted = false;
 let globalInterruptTimestamp = 0;
 
+// --- 交互式菜单状态管理 ---
+interface MenuState {
+  title: string;
+  options: string[];
+  timestamp: number;
+}
+let chatMenuState: Record<string, MenuState> = {};
+
 /**
  * Acquire a lock file to prevent multiple instances.
  */
@@ -302,6 +310,45 @@ async function processMessage(msg: NewMessage): Promise<void> {
   const isMainGroup = group.folder.toLowerCase() === MAIN_GROUP_FOLDER.toLowerCase();
   const isPrivateChat = msg.chat_jid.endsWith('@s.whatsapp.net');
 
+  // --- 交互式菜单状态拦截 ---
+  const activeMenu = chatMenuState[msg.chat_jid];
+  if (activeMenu) {
+    // 5分钟超时清除
+    if (Date.now() - activeMenu.timestamp > 5 * 60 * 1000) {
+      delete chatMenuState[msg.chat_jid];
+    } else {
+      const selection = parseInt(content);
+      // 1. 检查是否为取消指令
+      if (['cancel', '取消', '退出', 'stop', '🛑'].includes(content.toLowerCase())) {
+        delete chatMenuState[msg.chat_jid];
+        await sendMessage(msg.chat_jid, '✅ 菜单已取消，请重新输入指令。');
+        return;
+      }
+      
+      // 2. 检查是否为有效选项 (1-N)
+      if (!isNaN(selection) && selection >= 1 && selection <= activeMenu.options.length) {
+        const selectedOption = activeMenu.options[selection - 1];
+        logger.info({ selection, option: selectedOption }, 'User selected menu option');
+        
+        // 关键：构造系统指令，强制执行并立即结束
+        msg.content = `[SYSTEM_INJECTION] 用户已选择: "${selectedOption}"。请立即执行此操作。注意：只允许调用工具（如发文件），严禁输出任何废话或汇报文本。`;
+        
+        // 标记为“菜单执行模式”，后续将拦截所有非工具的文本输出
+        msg.isMenuExecution = true;
+        
+        // 消费掉菜单状态
+        delete chatMenuState[msg.chat_jid];
+      } else {
+        // 3. 无效输入或重复触发 -> 忽略 (防抖动)
+        // 处于菜单等待状态时，屏蔽除选项和取消以外的所有输入，防止幽灵消息触发重复菜单
+        if (content) {
+            logger.warn({ content }, 'Menu active, ignoring non-selection input');
+        }
+        return;
+      }
+    }
+  }
+
   // Skip trigger requirement if it's the main group, a private chat, or the trigger is present
   if (!isMainGroup && !isPrivateChat && !TRIGGER_PATTERN.test(content)) return;
 
@@ -446,16 +493,22 @@ async function processMessage(msg: NewMessage): Promise<void> {
       await sendReaction(msg.chat_jid, msgKey, '✅');
     }
 
-    // 统一使用引用的方式回复，并移除硬编码的“处理完毕”后缀，由 AI 自然结束
-    if (hasUserAudio && response.length < 500) {
-      const ttsPath = await generateTts(response);
-      if (ttsPath) {
-        await sendMessage(msg.chat_jid, response, { filePath: ttsPath, ptt: true, quoted: quotedMsg });
+    // 关键熔断：如果是菜单执行模式，强制拦截所有文本回复
+    // AI 在执行完发文件等工具后，往往会忍不住总结汇报。这里直接掐断，实现“干完活就闭嘴”。
+    if (msg.isMenuExecution) {
+      logger.info('Menu execution mode: Suppressing final text response.');
+    } else {
+      // 统一使用引用的方式回复
+      if (hasUserAudio && response.length < 500) {
+        const ttsPath = await generateTts(response);
+        if (ttsPath) {
+          await sendMessage(msg.chat_jid, response, { filePath: ttsPath, ptt: true, quoted: quotedMsg });
+        } else {
+          await sendMessage(msg.chat_jid, `${ASSISTANT_NAME}: ${response}`, { quoted: quotedMsg });
+        }
       } else {
         await sendMessage(msg.chat_jid, `${ASSISTANT_NAME}: ${response}`, { quoted: quotedMsg });
       }
-    } else {
-      await sendMessage(msg.chat_jid, `${ASSISTANT_NAME}: ${response}`, { quoted: quotedMsg });
     }
 
     // --- 异步记忆提炼 (不阻塞回复) ---
@@ -537,33 +590,31 @@ async function runAgent(
           if (ttsPath) {
             await sendMessage(chatJid, '', { filePath: ttsPath, ptt: true, quoted: quotedMsg });
           }
-        } else if (cmd.type === 'show_menu' && cmd.text && cmd.options) {
+        } else if (cmd.type === 'show_menu' && cmd.text && cmd.options && !menuShown) {
+          // 仅展示第一个菜单，防止 AI 话多连弹
           await sendMessage(chatJid, cmd.text, { buttons: cmd.options, quoted: quotedMsg });
           menuShown = true;
+          // Store menu state for next user interaction
+          chatMenuState[chatJid] = {
+            title: cmd.text,
+            options: cmd.options,
+            timestamp: Date.now()
+          };
         }
       }
 
       if (results.length === 0 || menuShown) {
         // 没有指令了，或者已经展示了菜单（交回控制权），直接结束
-        if (menuShown) logger.info({ iterations }, 'Menu shown, stopping agent loop');
-        finalResponse = menuShown ? '' : responseText; // 菜单本身就是回复，不需要额外文本
+        if (menuShown) {
+          logger.info({ iterations }, 'Menu shown, stopping agent loop');
+          finalResponse = '__MENU_SHOWN__'; 
+        } else {
+          finalResponse = responseText;
+        }
         break;
       }
 
-      // 2. 极致视觉优化：动态进度条与指令截断
-      const filledChar = '⬤'; 
-      const emptyChar = '◯';
-      const barLength = 10;
-      
-      // 动态进度计算：根据步数阶梯式增长，给用户稳定的预期
-      let displayPercent = 0;
-      if (iterations <= 3) displayPercent = iterations * 15; // 15%, 30%, 45%
-      else if (iterations <= 8) displayPercent = 45 + (iterations - 3) * 7; // 52% - 80%
-      else displayPercent = Math.min(80 + (iterations - 8) * 2, 98); // 82% -> 98%
-
-      const progressBlocks = Math.min(Math.floor((displayPercent / 100) * barLength), barLength);
-      const progressBar = filledChar.repeat(progressBlocks) + emptyChar.repeat(barLength - progressBlocks);
-      
+      // 2. 极致极简 UI：移除进度条和步数
       const statusUpdate = commands.map((cmd: any) => {
         let label = '';
         let detail = '';
@@ -574,20 +625,16 @@ async function runAgent(
         else if (cmd.type === 'list_knowledge') { label = '📚 查阅'; detail = '知识库目录'; }
         else { label = '🛠️ 工具'; detail = cmd.type; }
 
-        // 关键点：指令截断，防止刷屏
         const shortDetail = detail.length > 30 ? detail.slice(0, 27) + '...' : detail;
         return `> ${label}: \`${shortDetail}\``;
-      }).slice(-1).join('\n'); // 仅显示当前最新的动作
+      }).slice(-1).join('\n');
 
       await sendMessage(
         chatJid,
-        `🐾 *${ASSISTANT_NAME} 任务执行中...*\n\n` +
-        `进度: ${progressBar}  ${displayPercent}%\n` +
-        `步骤: ${iterations} (执行上限已提升)\n` +
+        `🐾 *${ASSISTANT_NAME} 正在执行指令...*\n` +
         `──────────────────\n` +
         `${statusUpdate}\n` +
-        `──────────────────\n` +
-        `_正在思考下一步动作..._`,
+        `──────────────────`,
         { quoted: quotedMsg }
       );
 
@@ -606,6 +653,7 @@ async function runAgent(
     }
   }
 
+  if (finalResponse === '__MENU_SHOWN__') return '';
   return finalResponse || '任务执行超时或未给出明确答复。';
 }
 

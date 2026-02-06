@@ -53,6 +53,7 @@ export interface NewMessage {
   content: string;
   timestamp: string;
   from_me: boolean;
+  isMenuExecution?: boolean;
 }
 
 export interface ScheduledTask {
