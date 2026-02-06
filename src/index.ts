@@ -42,16 +42,19 @@ import {
   storeMemory,
   storeMessage,
   updateChatName,
+  storeGenericMessage,
 } from './db.js';
 import { startSchedulerLoop } from './task-scheduler.js';
 import { NewMessage, RegisteredGroup, Session } from './types.js';
 import { loadJson, saveJson } from './utils.js';
 import { logger } from './logger.js';
+import { LarkConnector } from './lark-connector.js';
 
 const GROUP_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const PID_FILE = path.join(DATA_DIR, 'nanoclaw.pid');
 
 let sock: WASocket | null = null;
+let larkConnector: LarkConnector | null = null;
 let lastTimestamp = '';
 let sessions: Session = {};
 let registeredGroups: Record<string, RegisteredGroup> = {};
@@ -369,7 +372,9 @@ async function processMessage(msg: NewMessage): Promise<void> {
     return;
   }
 
-  await sendReaction(msg.chat_jid, msgKey, '👀');
+  if (!msg.chat_jid.startsWith('lark@')) {
+    await sendReaction(msg.chat_jid, msgKey, '👀');
+  }
 
   // 关键优化：减少上下文深度，仅保留最近 15 条，防止 AI 纠缠历史话题
   const recentMessages = getRecentMessages(msg.chat_jid, 15);
@@ -467,7 +472,9 @@ async function processMessage(msg: NewMessage): Promise<void> {
   );
 
   // --- [UX 升级] 表情回应机制：处理中 ---
-  await sendReaction(msg.chat_jid, msgKey, '⏳');
+  if (!msg.chat_jid.startsWith('lark@')) {
+    await sendReaction(msg.chat_jid, msgKey, '⏳');
+  }
   
   // 构造引用对象 (用于后续所有回复)
   const quotedMsg = {
@@ -488,10 +495,12 @@ async function processMessage(msg: NewMessage): Promise<void> {
     lastAgentTimestamp[msg.chat_jid] = msg.timestamp;
     
     // --- [UX 升级] 任务完成反馈 ---
-    if (response.includes('🛑')) {
-      await sendReaction(msg.chat_jid, msgKey, '🛑');
-    } else {
-      await sendReaction(msg.chat_jid, msgKey, '✅');
+    if (!msg.chat_jid.startsWith('lark@')) {
+      if (response.includes('🛑')) {
+        await sendReaction(msg.chat_jid, msgKey, '🛑');
+      } else {
+        await sendReaction(msg.chat_jid, msgKey, '✅');
+      }
     }
 
     // 关键熔断：如果是菜单执行模式，强制拦截所有文本回复
@@ -700,6 +709,15 @@ async function sendReaction(jid: string, messageKey: any, emoji: string): Promis
 }
 
 async function sendMessage(jid: string, text: string, options: { filePath?: string, ptt?: boolean, buttons?: string[], quoted?: any } = {}): Promise<void> {
+  if (jid.startsWith('lark@')) {
+    if (larkConnector) {
+      await larkConnector.sendMessage(jid, text, options);
+    } else {
+      logger.warn({ jid }, 'Lark connector not initialized');
+    }
+    return;
+  }
+
   if (!sock) {
     logger.warn({ jid }, 'Cannot send message: WhatsApp socket not connected');
     return;
@@ -1388,6 +1406,33 @@ async function main(): Promise<void> {
   initDatabase();
   logger.info('Database initialized');
   loadState();
+
+  // Initialize Lark Connector
+  larkConnector = new LarkConnector(async (msg) => {
+    // Store message in DB first so history-based processing works
+    storeGenericMessage({
+      id: msg.id,
+      chat_jid: msg.chat_jid,
+      sender_jid: msg.sender,
+      sender_name: msg.sender_name,
+      content: msg.content,
+      timestamp: msg.timestamp,
+      from_me: msg.from_me
+    });
+
+    // Lark messages automatically skip registered check for now or use 'main'
+    if (!registeredGroups[msg.chat_jid]) {
+        registeredGroups[msg.chat_jid] = {
+            name: 'Lark Chat',
+            folder: MAIN_GROUP_FOLDER,
+            trigger: `@${ASSISTANT_NAME}`,
+            added_at: new Date().toISOString()
+        };
+    }
+    await processMessage(msg);
+  });
+  larkConnector.start().catch(err => logger.error({ err }, 'Failed to start Lark connector'));
+
   await connectWhatsApp();
 }
 

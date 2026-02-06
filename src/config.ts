@@ -44,6 +44,11 @@ export function escapeRegex(str: string): string {
 export const TRIGGER_PATTERN = new RegExp(`^@(${escapeRegex(ASSISTANT_NAME)}|小助手)\\b`, 'i');
 export const TIMEZONE = process.env.TZ || 'Asia/Shanghai';
 
+// Lark (Feishu) Configuration
+export const LARK_APP_ID = process.env.LARK_APP_ID || 'cli_a9f7dccbb479dbdc';
+export const LARK_APP_SECRET = process.env.LARK_APP_SECRET || 'BIy2tD7ALu3Kx0YCIiGeQchJQMZdRJ2J';
+export const LARK_PORT = parseInt(process.env.LARK_PORT || '3000', 10);
+
 // Beijing Tech Brief Alignment (2026-02-06)
 export const TASK_FLOW_CONFIG = {
   VLM_PRIORITY: 'high',

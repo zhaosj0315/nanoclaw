@@ -97,6 +97,14 @@ export function deleteMemory(id: number) {
   db.prepare('DELETE FROM memories WHERE id = ?').run(id);
 }
 
+export function storeGenericMessage(msg: { id: string, chat_jid: string, sender_jid: string, sender_name?: string, content: string, timestamp: string, from_me: boolean }) {
+  db.prepare(`
+    INSERT INTO messages (id, chat_jid, sender_jid, sender_name, content, timestamp, from_me)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO NOTHING
+  `).run(msg.id, msg.chat_jid, msg.sender_jid, msg.sender_name || null, msg.content, msg.timestamp, msg.from_me ? 1 : 0);
+}
+
 export function storeMessage(msg: any, chatJid: string, fromMe: boolean, senderName?: string) {
   const id = msg.key.id;
   const senderJid = msg.key.participant || msg.key.remoteJid;
