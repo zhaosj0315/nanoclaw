@@ -78,7 +78,7 @@ class WorldCupScraper:
         # Save Markdown Report
         md_path = os.path.join(self.output_dir, f"report_{timestamp}.md")
         with open(md_path, 'w', encoding='utf-8') as f:
-            f.write(f"# 🐾 NanoClaw: World Cup 2026 Intelligence Report\n\n")
+            f.write(f"# 🐾 zhaosj的助手: World Cup 2026 Intelligence Report\n\n")
             f.write(f"**Generated at:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
             
             for i, article in enumerate(unique_articles, 1):

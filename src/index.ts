@@ -282,10 +282,6 @@ async function processMessage(msg: NewMessage): Promise<void> {
   }
 
   const content = msg.content.trim();
-  logger.info(
-    { group: group.name, user: msg.sender_name, content },
-    'New message received',
-  );
 
   // --- 关键修复：空消息过滤 ---
   // 如果内容为空且没有媒体文件，直接忽略，防止 WhatsApp 系统消息或同步空消息触发重复回复。
@@ -297,6 +293,11 @@ async function processMessage(msg: NewMessage): Promise<void> {
     logger.debug({ msgId: msg.id }, 'Ignoring empty message with no media');
     return;
   }
+
+  logger.info(
+    { group: group.name, user: msg.sender_name, content },
+    'New message received',
+  );
 
   const isMainGroup = group.folder.toLowerCase() === MAIN_GROUP_FOLDER.toLowerCase();
   const isPrivateChat = msg.chat_jid.endsWith('@s.whatsapp.net');
@@ -460,8 +461,9 @@ async function processMessage(msg: NewMessage): Promise<void> {
     // --- 异步记忆提炼 (不阻塞回复) ---
     (async () => {
       try {
-        const memoryPrompt = `以下是最近的一段对话和已有的长期记忆。请判断本次对话是否产生了值得记录的新"材料"、"事实"或"偏好"。
-        如果有，请简洁地列出这些事实（每条一行）。如果没有，请回复"NONE"。
+        const memoryPrompt = `以下是最近的一段对话。请只关注【用户】(USER) 提供的新信息、偏好或指令。
+        请【忽略】助手(ASSISTANT) 的回复内容，也不要记录日期/时间等常识性信息。
+        判断是否有值得长期记忆的用户事实。如果有，请列出；如果没有，请回复 "NONE"。
         
         对话内容：
         ${historyContext}
@@ -579,7 +581,7 @@ async function runAgent(
 
       await sendMessage(
         chatJid,
-        `🐾 *NanoClaw 任务执行中...*\n\n` +
+        `🐾 *${ASSISTANT_NAME} 任务执行中...*\n\n` +
         `进度: ${progressBar}  ${displayPercent}%\n` +
         `步骤: ${iterations} (执行上限已提升)\n` +
         `──────────────────\n` +
@@ -1051,7 +1053,7 @@ async function connectWhatsApp(): Promise<void> {
     },
     printQRInTerminal: false,
     logger,
-    browser: ['NanoClaw', 'Chrome', '1.0.0'],
+    browser: ['zhaosj的助手', 'Chrome', '1.0.0'],
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
     keepAliveIntervalMs: 30000,
@@ -1069,7 +1071,7 @@ async function connectWhatsApp(): Promise<void> {
         'WhatsApp authentication required. Please scan the QR code in the terminal or use the setup tool.';
       logger.error(msg);
       exec(
-        `osascript -e 'display notification "${msg}" with title "NanoClaw 🐾" sound name "Basso"'`,
+        `osascript -e 'display notification "${msg}" with title "zhaosj的助手 🐾" sound name "Basso"'`,
       );
       setTimeout(() => process.exit(1), 1000);
     }
@@ -1218,7 +1220,7 @@ async function startMessageLoop(): Promise<void> {
     return;
   }
   messageLoopRunning = true;
-  logger.info(`NanoClaw running (trigger: @${ASSISTANT_NAME})`);
+  logger.info(`${ASSISTANT_NAME} running (trigger: @${ASSISTANT_NAME})`);
 
   while (true) {
     try {

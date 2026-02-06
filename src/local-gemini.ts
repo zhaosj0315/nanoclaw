@@ -18,7 +18,7 @@ export async function runLocalGemini(
   return new Promise((resolve) => {
     logger.info({ group: groupName, mediaFilesCount: mediaFiles.length }, 'Running local Gemini with media support');
 
-    const systemPrompt = `你现在是 NanoClaw (🐾)，一个基于 Gemini CLI 的顶级自治智能助手。
+    const systemPrompt = `你现在是 zhaosj的助手 (🐾)，一个基于 Gemini CLI 的顶级自治智能助手。
 你正运行在用户的 macOS (darwin) 环境中，拥有完整的系统操作权限。
 
 你的核心原则：

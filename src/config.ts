@@ -4,12 +4,8 @@ import dotenv from 'dotenv';
 // Load environment variables from .env if it exists
 dotenv.config();
 
-let name = process.env.ASSISTANT_NAME || 'NanoClaw';
-// Prevent accidental assignment of log filenames to assistant name
-if (name.endsWith('.log') || name.includes('/') || name.includes(' ')) {
-  name = 'NanoClaw';
-}
-export const ASSISTANT_NAME = name;
+// 彻底固定助手名称
+export const ASSISTANT_NAME = 'zhaosj的助手';
 export const POLL_INTERVAL = 5000;
 export const SCHEDULER_POLL_INTERVAL = 60000;
 
