@@ -41,17 +41,21 @@ export async function runLocalGemini(
 
     const fullPrompt = systemPrompt + prompt;
 
-    // 使用 -p 参数显式传递 prompt，并将媒体文件作为位置参数，确保多模态关联成功
-    const args = ['--output-format', 'text', '--approval-mode', 'yolo', ...mediaFiles, '-p', fullPrompt];
+    // 构建命令行参数：将媒体文件路径作为位置参数传入，实现原生多模态支持
+    // 注意：不能使用 -p 参数，因为那会与位置参数（媒体文件）冲突
+    const args = ['--output-format', 'text', '--approval-mode', 'yolo', ...mediaFiles];
 
-    logger.debug({ args }, 'Executing gemini CLI command');
+    logger.debug({ args }, 'Executing gemini CLI command via stdin');
 
     const gemini = spawn('gemini', args, {
-      stdio: ['inherit', 'pipe', 'pipe'], // stdin inherit to avoid issues, capture stdout/err
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
 
     let stdout = '';
     let stderr = '';
+
+    gemini.stdin.write(fullPrompt);
+    gemini.stdin.end();
 
     gemini.stdout.on('data', (data) => {
       stdout += data.toString();
