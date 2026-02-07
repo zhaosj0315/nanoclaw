@@ -241,6 +241,16 @@
                     </tbody>
                 </table>
             </div>
+            
+            <!-- Pagination Footer -->
+            <div class="shrink-0 bg-slate-950 border-t border-slate-800 px-4 py-2 flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
+                <div class="flex items-center gap-4">
+                    <button id="btn-prev" onclick="changePage(-1)" class="text-slate-500 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-colors">◀ PREV_PAGE</button>
+                    <div class="text-slate-600">PAGE <span id="current-page-num" class="text-emerald-500">1</span> OF <span id="total-pages-num" class="text-slate-400">1</span></div>
+                    <button id="btn-next" onclick="changePage(1)" class="text-slate-500 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-colors">NEXT_PAGE ▶</button>
+                </div>
+                <div class="text-slate-700">TOTAL_RECORDS: <span id="total-records-count">0</span></div>
+            </div>
         </div>
     </div>
 
@@ -288,12 +298,22 @@
 
         let activeFilters = { media: false, slow: false, failed: false };
         let seenIds = new Set();
-        let lastData = { log: [], stats: null };
+        let lastData = { log: [], stats: null, total: 0 };
+        let currentPage = 1;
 
         function toggleFilter(type) {
             activeFilters[type] = !activeFilters[type];
             document.getElementById(`filter-${type}`).classList.toggle('active', activeFilters[type]);
             renderCurrentData(); 
+        }
+
+        function changePage(delta) {
+            const totalPages = Math.ceil(lastData.total / 20) || 1;
+            const newPage = currentPage + delta;
+            if (newPage >= 1 && newPage <= totalPages) {
+                currentPage = newPage;
+                fetchLog();
+            }
         }
 
         async function openFileInDrawer(encodedFilename) {
@@ -547,8 +567,10 @@
             try {
                 // 核心修复：强制清除 URL 中的凭据，防止浏览器安全拦截
                 const cleanUrl = new URL('/api/log', window.location.origin);
-                cleanUrl.username = ''; // 强行抹除用户名
-                cleanUrl.password = ''; // 强行抹除密码
+                cleanUrl.username = ''; 
+                cleanUrl.password = ''; 
+                cleanUrl.searchParams.set('page', currentPage);
+                cleanUrl.searchParams.set('limit', 20);
                 
                 const res = await fetch(cleanUrl.href);
                 
@@ -563,8 +585,16 @@
 
                 lastData = await res.json();
                 
-                const { stats, log } = lastData;
+                const { stats, log, total } = lastData;
                 
+                // Update Pagination UI
+                const totalPages = Math.ceil(total / 20) || 1;
+                document.getElementById('current-page-num').textContent = currentPage;
+                document.getElementById('total-pages-num').textContent = totalPages;
+                document.getElementById('total-records-count').textContent = total;
+                document.getElementById('btn-prev').disabled = currentPage <= 1;
+                document.getElementById('btn-next').disabled = currentPage >= totalPages;
+
                 // Visitor IP Tracking
                 if (stats && stats.visitor_ip) {
                     const geo = await getGeo(stats.visitor_ip);

@@ -63,7 +63,11 @@ app.get('/media/:filename', (req, res) => {
 
 app.get('/api/log', (req, res) => {
     try {
-        const log = getInteractionLog(50) || [];
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 20;
+        const offset = (page - 1) * limit;
+
+        const { tasks, total } = getInteractionLog(limit, offset);
         const stats = getDailyStats() || { total_tasks: 0, total_tokens: 0, avg_duration: 0 };
         
         // 极致兼容的访问者 IP 捕捉
@@ -76,7 +80,10 @@ app.get('/api/log', (req, res) => {
         }
         
         res.json({ 
-            log, 
+            log: tasks, 
+            total,
+            page,
+            limit,
             stats: { 
                 ...stats, 
                 visitor_ip: visitorIp 

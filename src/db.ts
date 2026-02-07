@@ -369,13 +369,16 @@ export function getInteractionTask(id: string): InteractionTask | undefined {
   return db.prepare('SELECT * FROM interaction_tasks WHERE id = ?').get(id) as InteractionTask | undefined;
 }
 
-export function getInteractionLog(limit = 50) {
+export function getInteractionLog(limit = 20, offset = 0) {
+  // Get total count for pagination
+  const { total } = db.prepare('SELECT COUNT(*) as total FROM interaction_tasks').get() as { total: number };
+
   // Returns a structured object with tasks and their responses
   const tasks = db.prepare(`
     SELECT * FROM interaction_tasks 
     ORDER BY created_at DESC 
-    LIMIT ?
-  `).all(limit) as any[];
+    LIMIT ? OFFSET ?
+  `).all(limit, offset) as any[];
 
   // Parse JSON fields
   const tasksWithParsedData = tasks.map(t => ({
@@ -385,7 +388,7 @@ export function getInteractionLog(limit = 50) {
   }));
 
   const taskIds = tasks.map(t => t.id);
-  if (taskIds.length === 0) return [];
+  if (taskIds.length === 0) return { tasks: [], total };
 
   const placeholders = taskIds.map(() => '?').join(',');
   const responses = db.prepare(`
@@ -400,5 +403,5 @@ export function getInteractionLog(limit = 50) {
     responses: responses.filter(r => r.parent_id === task.id)
   }));
 
-  return result;
+  return { tasks: result, total };
 }
