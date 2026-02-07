@@ -288,16 +288,16 @@ function getAvailableGroups(): AvailableGroup[] {
 import { analyzeMedia } from './media-analyzer.js';
 
 async function processMessage(msg: any): Promise<void> {
-  // 核心防御：对所有输入的 JID 进行强制去空格归一化
+  // 核心防御：彻底移除所有不可见字符和非标空格
   const rawJid = msg.chat_jid || '';
-  const chatJid = rawJid.replace(/\s+/g, '');
+  const chatJid = rawJid.replace(/[^\w@.-]/g, '');
   
   logger.info({ id: msg.id, chatJid, content: msg.content }, '--- UNIFIED_PIPELINE_ENTRY ---');
 
   const group = registeredGroups[chatJid];
   
   if (!group) {
-    logger.warn({ chatJid, available: Object.keys(registeredGroups) }, 'PIPELINE_BLOCKED: JID_NOT_REGISTERED');
+    logger.warn({ chatJid, registeredCount: Object.keys(registeredGroups).length }, 'PIPELINE_BLOCKED: JID_NOT_REGISTERED');
     return;
   }
 
@@ -317,7 +317,7 @@ async function processMessage(msg: any): Promise<void> {
   }
   
   if (!content && !hasAttachments) {
-    logger.debug({ msgId: msg.id }, 'PIPELINE_SKIPPED: EMPTY_MESSAGE');
+    logger.warn({ msgId: msg.id, content: msg.content }, 'PIPELINE_SKIPPED: EMPTY_CONTENT_AND_NO_MEDIA');
     return;
   }
 

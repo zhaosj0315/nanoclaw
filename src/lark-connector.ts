@@ -30,16 +30,20 @@ export class LarkConnector {
 
         const messageId = message.message_id;
         const msgType = (message as any).msg_type;
-        // 彻底归一化：移除所有空白字符，确保 JID 绝对纯净
-        const chatId = message.chat_id.replace(/\s+/g, '');
+        
+        // 极致归一化：仅保留字母、数字和下划线，彻底杜绝任何形式的空格或特殊字符
+        const chatId = message.chat_id.replace(/[^\w]/g, '');
         let content = '';
         let attachments: string[] = [];
 
         try {
-          const parsedContent = JSON.parse(message.content);
+          const rawContent = message.content;
+          const parsedContent = JSON.parse(rawContent);
           
           if (msgType === 'text') {
             content = parsedContent.text || '';
+            // 飞书文本二次清洗：移除可能存在的转义反斜杠
+            content = content.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
           } else if (msgType === 'image') {
             content = '[IMAGE]';
             await this.downloadResource(messageId, parsedContent.image_key, 'image', `image_${messageId}.jpg`);
@@ -50,19 +54,25 @@ export class LarkConnector {
             content = '[VIDEO]';
             await this.downloadResource(messageId, parsedContent.file_key, 'file', `video_${messageId}.mp4`);
           } else if (msgType === 'file') {
-            const fileName = (parsedContent.file_name || 'file').replace(/\s+/g, '_');
+            const fileName = (parsedContent.file_name || 'file').replace(/[^\w.]/g, '_');
             content = `[DOCUMENT: ${fileName}]`;
             await this.downloadResource(messageId, parsedContent.file_key, 'file', `doc_${messageId}_${fileName}`);
           }
+          
+          // 如果解析后还是空的，尝试暴力匹配文本内容
+          if (!content && msgType === 'text' && rawContent.includes('"text":"')) {
+            const match = rawContent.match(/"text":"(.*?)"/);
+            if (match) content = match[1];
+          }
         } catch (e) {
-          logger.error({ e, messageId }, 'Failed to parse Lark message content');
+          logger.error({ e, messageId }, 'Lark content parsing failed, using fallback');
           content = message.content;
         }
 
         const msg: NewMessage = {
           id: messageId,
-          chat_jid: `lark@${chatId}`,
-          sender: (sender.sender_id?.open_id || 'unknown').replace(/\s+/g, ''),
+          chat_jid: "lark@" + chatId, // 显式拼接，严禁空格
+          sender: (sender.sender_id?.open_id || 'unknown').replace(/[^\w]/g, ''),
           sender_name: 'Lark User',
           content: content,
           timestamp: new Date(parseInt(message.create_time)).toISOString(),
