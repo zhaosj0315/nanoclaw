@@ -19,6 +19,7 @@
     "better-sqlite3": "^11.8.1",
     "cron-parser": "^5.5.0",
     "dotenv": "^17.2.3",
+    "express": "^5.2.1",
     "mammoth": "^1.11.0",
     "pdf-parse": "^2.4.5",
     "pino": "^9.6.0",
@@ -29,6 +30,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
     "@types/dotenv": "^6.1.1",
+    "@types/express": "^5.0.6",
     "@types/node": "^22.10.0",
     "@types/qrcode-terminal": "^0.12.2",
     "prettier": "^3.8.1",

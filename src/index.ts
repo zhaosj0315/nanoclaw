@@ -43,6 +43,9 @@ import {
   storeMessage,
   updateChatName,
   storeGenericMessage,
+  createInteractionTask,
+  completeInteractionTask,
+  addInteractionResponse,
 } from './db.js';
 import { startSchedulerLoop } from './task-scheduler.js';
 import { NewMessage, RegisteredGroup, Session } from './types.js';
@@ -50,6 +53,7 @@ import { loadJson, saveJson } from './utils.js';
 import { logger } from './logger.js';
 import { LarkConnector } from './lark-connector.js';
 import { generateDashboard } from './db-dashboard.js';
+import { startDashboardServer } from './server.js';
 
 const GROUP_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const PID_FILE = path.join(DATA_DIR, 'nanoclaw.pid');
@@ -377,6 +381,9 @@ async function processMessage(msg: NewMessage): Promise<void> {
     await sendReaction(msg.chat_jid, msgKey, '👀');
   }
 
+  // --- Log Interaction Start ---
+  createInteractionTask(msg.id, msg.chat_jid, content || '[Media Message]');
+
   // 关键优化：减少上下文深度，仅保留最近 15 条，防止 AI 纠缠历史话题
   const recentMessages = getRecentMessages(msg.chat_jid, 15);
   const memories = getMemories(msg.chat_jid);
@@ -487,7 +494,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
   const typingInterval = setInterval(() => setTyping(msg.chat_jid, true), 5000);
   await setTyping(msg.chat_jid, true);
 
-  const response = await runAgent(group, prompt, msg.chat_jid, finalMediaFiles, quotedMsg);
+  const response = await runAgent(group, prompt, msg.chat_jid, finalMediaFiles, quotedMsg, msg.id);
   
   clearInterval(typingInterval);
   await setTyping(msg.chat_jid, false);
@@ -569,6 +576,7 @@ async function runAgent(
   chatJid: string,
   mediaFiles: string[] = [],
   quotedMsg?: any,
+  parentId?: string,
 ): Promise<string | null> {
   const { executeTools } = await import('./tool-executor.js');
   let currentPrompt = initialPrompt;
@@ -581,6 +589,7 @@ async function runAgent(
     // 检查是否有在此任务开始之后发出的中断指令
     if (globalInterruptTimestamp > taskStartTime) {
       logger.warn({ chatJid, iterations }, 'Agent execution aborted due to global interrupt');
+      if (parentId) addInteractionResponse(parentId, 'Reaction', '🛑 任务已被手动终止。');
       return '🛑 任务已被手动终止。';
     }
 
@@ -610,6 +619,7 @@ async function runAgent(
         if (cmd.type === 'send_file' && cmd.path) {
           if (filesSentCount < 3) {
             await sendMessage(chatJid, '📦 正在为您回传文件...', { filePath: cmd.path, quoted: quotedMsg });
+            if (parentId) addInteractionResponse(parentId, 'File', cmd.path);
             filesSentCount++;
             actionExecuted = true;
           } else if (filesSentCount === 3) {
@@ -620,11 +630,13 @@ async function runAgent(
           const ttsPath = await generateTts(cmd.text);
           if (ttsPath) {
             await sendMessage(chatJid, '', { filePath: ttsPath, ptt: true, quoted: quotedMsg });
+            if (parentId) addInteractionResponse(parentId, 'Audio', cmd.text);
             actionExecuted = true;
           }
         } else if (cmd.type === 'show_menu' && cmd.text && cmd.options && !menuShown) {
           // 仅展示第一个菜单，防止 AI 话多连弹
           await sendMessage(chatJid, cmd.text, { buttons: cmd.options, quoted: quotedMsg });
+          if (parentId) addInteractionResponse(parentId, 'Text', `[MENU] ${cmd.text}`);
           menuShown = true;
           // Store menu state for next user interaction
           chatMenuState[chatJid] = {
@@ -645,6 +657,7 @@ async function runAgent(
           finalResponse = '__SILENT_FINISH__';
         } else {
           finalResponse = responseText;
+          if (parentId) addInteractionResponse(parentId, 'Text', responseText);
         }
         break;
       }
@@ -688,6 +701,7 @@ async function runAgent(
     }
   }
 
+  if (parentId) completeInteractionTask(parentId);
   if (finalResponse === '__MENU_SHOWN__' || finalResponse === '__SILENT_FINISH__') return '';
   return finalResponse || '任务执行超时或未给出明确答复。';
 }
@@ -1441,6 +1455,7 @@ async function main(): Promise<void> {
   larkConnector.start().catch(err => logger.error({ err }, 'Failed to start Lark connector'));
 
   await connectWhatsApp();
+  startDashboardServer();
 }
 
 main().catch((err) => {

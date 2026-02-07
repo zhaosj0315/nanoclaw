@@ -27,6 +27,22 @@ export interface Task {
   created_at: string;
 }
 
+export interface InteractionTask {
+  id: string;
+  session_id: string; // chat_jid or source
+  content: string;
+  status: 'PENDING' | 'RESOLVED';
+  created_at: string;
+}
+
+export interface InteractionResponse {
+  id: number;
+  parent_id: string;
+  type: 'Text' | 'Audio' | 'Image' | 'File' | 'Reaction';
+  content: string;
+  created_at: string;
+}
+
 export function initDatabase() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS messages (
@@ -74,6 +90,22 @@ export function initDatabase() {
       fact TEXT,
       category TEXT,
       created_at DATETIME
+    );
+    -- New Tables for Q&A Physics Binding
+    CREATE TABLE IF NOT EXISTS interaction_tasks (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      content TEXT,
+      status TEXT,
+      created_at DATETIME
+    );
+    CREATE TABLE IF NOT EXISTS interaction_responses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      parent_id TEXT,
+      type TEXT,
+      content TEXT,
+      created_at DATETIME,
+      FOREIGN KEY(parent_id) REFERENCES interaction_tasks(id)
     );
   `);
 }
@@ -252,4 +284,56 @@ export function setLastGroupSync() {
 export function getLastGroupSync(): string | undefined {
   const res = db.prepare("SELECT value FROM kv_store WHERE key = 'last_group_sync'").get() as any;
   return res?.value;
+}
+
+// --- Interaction Log (Q&A Physics Binding) ---
+
+export function createInteractionTask(id: string, session_id: string, content: string) {
+  db.prepare(`
+    INSERT INTO interaction_tasks (id, session_id, content, status, created_at)
+    VALUES (?, ?, ?, 'PENDING', ?)
+    ON CONFLICT(id) DO NOTHING
+  `).run(id, session_id, content, new Date().toISOString());
+}
+
+export function completeInteractionTask(id: string) {
+  db.prepare(`
+    UPDATE interaction_tasks 
+    SET status = 'RESOLVED'
+    WHERE id = ?
+  `).run(id);
+}
+
+export function addInteractionResponse(parent_id: string, type: string, content: string) {
+  db.prepare(`
+    INSERT INTO interaction_responses (parent_id, type, content, created_at)
+    VALUES (?, ?, ?, ?)
+  `).run(parent_id, type, content, new Date().toISOString());
+}
+
+export function getInteractionLog(limit = 50) {
+  // Returns a structured object with tasks and their responses
+  const tasks = db.prepare(`
+    SELECT * FROM interaction_tasks 
+    ORDER BY created_at DESC 
+    LIMIT ?
+  `).all(limit) as InteractionTask[];
+
+  const taskIds = tasks.map(t => t.id);
+  if (taskIds.length === 0) return [];
+
+  const placeholders = taskIds.map(() => '?').join(',');
+  const responses = db.prepare(`
+    SELECT * FROM interaction_responses 
+    WHERE parent_id IN (${placeholders})
+    ORDER BY created_at ASC
+  `).all(...taskIds) as InteractionResponse[];
+
+  // Group responses by task
+  const result = tasks.map(task => ({
+    ...task,
+    responses: responses.filter(r => r.parent_id === task.id)
+  }));
+
+  return result;
 }
