@@ -1,27 +1,26 @@
 # Project Summary
-NanoClaw 已进化为 **"Tactical 3.5"** —— 一个工业级的、具备全链路审计能力的自治多模态 AI 中枢。
+NanoClaw 已进化为 **"Tactical 5.0"** —— 一个全平面、高透明度的自治多模态 AI 指挥中枢。
 
-**Last Updated**: 2026-02-07 (Tactical Update)
+**Last Updated**: 2026-02-07 (5.0 Tactical Update)
 
 ## 🌟 核心里程碑
-1.  **统一通信中枢 (Unified Pipeline)**: 
-    - 成功打通 **WhatsApp** 与 **Lark (飞书)** 双链路。
-    - 实现了 `Message Store` -> `Central Loop` 的解耦架构，任何新 IM 接入只需 50 行代码。
-2.  **战术审计看板 (Dashboard 3.5)**:
-    - **可视化**: 实现了 "Golden Ratio" 布局与深色战术风格。
-    - **可交互**: 文件侧边栏预览、音频内嵌播放、图片热预览。
-    - **可追溯**: 建立了 `Question` -> `Physical Path` -> `Answer` 的像素级追溯链。
-    - **可干预**: 实装了 `RETRY` (一键重试) 与 `Phantom Detection` (意图缺失告警)。
-3.  **多模态防幻觉 (Anti-Hallucination)**:
-    - 实施了 **"Media Manifest" (附件清单)** 策略，强行锁定 AI 的视觉焦点。
-    - 物理隔离历史图片，杜绝 "张冠李戴"。
+1.  **多维战术看板 (Multi-View Terminal)**: 
+    - 实现了 **"一个表一页"** 的物理隔离架构。
+    - 成功部署了 5 个独立数据平面：`Audit`, `Memory`, `Tasks`, `Comms`, `System`。
+2.  **深度遥测堆栈 (Waterfall Telemetry)**:
+    - 实现了像素级的耗时追踪，精准区分预处理、LLM 推理与工具执行时间。
+    - 引入了实时 TPS 指标与 Token 比例分布图。
+3.  **任务全息审查 (Task Inspector)**:
+    - 点击任务 ID 即可穿透至底层 Request Payload 与精准算力账单。
+4.  **去中心化访问**:
+    - 移除了冗余的 Basic Auth，优化了本地审计流程，彻底解决了 `fetch credential` 错误。
 
 ## 📊 系统状态
-- **接入端**: WhatsApp (Stable), Lark (Stable, Long-Connection)
-- **附件支持**: Image, Audio, Video, PDF/Doc (全自动下载与路由)
+- **核心版本**: v5.0 (Stable)
+- **多模态能力**: 锁定中 (Manifest Anchoring + Turn-based Isolation)
 - **运行环境**: macOS (M4 Max Optimized)
-- **Token 消耗**: 实时监控中 (见 Dashboard 顶部)
+- **核心数据表**: `interaction_tasks`, `memories`, `tasks`, `kv_store`, `messages`
 
 ## 🔮 下一步方向
-- **Codebase Indexing**: 增强对本地代码库的语义理解。
-- **More Tools**: 扩展更多系统级运维工具。
+- **Log Stream Analysis**: 实时流式分析自身运行日志。
+- **Auto-Recovery**: 增强对外键冲突等“过度执行”问题的自动回滚。

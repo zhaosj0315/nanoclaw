@@ -94,10 +94,14 @@ A personal Claude assistant accessible via WhatsApp, with minimal custom code.
 - Unregistered groups are ignored completely
 
 ### Memory System
-- **Per-group memory**: Each group has a folder with its own `CLAUDE.md`
-- **Global memory**: Root `CLAUDE.md` is read by all groups, but only writable from "main" (self-chat)
-- **Files**: Groups can create/read files in their folder and reference them
-- Agent runs in the group's folder, automatically inherits both CLAUDE.md files
+- **Structural Memory**: Facts and preferences are stored in the SQLite `memories` table, indexed by `chat_jid`.
+- **Classification**: Memories are tagged by category (general, user, etc.) for better context filtering.
+- **Global Awareness**: The agent queries structural memories before every inference to ensure long-term consistency.
+
+### Dashboard & Observability
+- **Audit-First**: The UI is designed for high-agency users to see the "physics" of the AI.
+- **No Friction**: Authentication is removed for local development to ensure absolute speed and zero `fetch` errors.
+- **Full Transparency**: Every database plane (Tasks, Comms, System) is exposed as a dedicated full-screen view.
 
 ### Session Management
 - Each group maintains a conversation session (via Claude Agent SDK)
