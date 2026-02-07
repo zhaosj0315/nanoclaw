@@ -381,8 +381,20 @@ async function processMessage(msg: NewMessage): Promise<void> {
     await sendReaction(msg.chat_jid, msgKey, '👀');
   }
 
+  // Check for media attachments for this specific message to update log content
+  let logContent = content;
+  const currentImage = path.join(DATA_DIR, 'media', `image_${msg.id}.jpg`);
+  const currentVoice = path.join(DATA_DIR, 'media', `voice_${msg.id}.ogg`);
+  
+  if (fs.existsSync(currentImage)) {
+    logContent = (logContent || '') + ` [IMAGE: image_${msg.id}.jpg]`;
+  }
+  if (fs.existsSync(currentVoice)) {
+    logContent = (logContent || '') + ` [AUDIO: voice_${msg.id}.ogg]`;
+  }
+
   // --- Log Interaction Start ---
-  createInteractionTask(msg.id, msg.chat_jid, content || '[Media Message]');
+  createInteractionTask(msg.id, msg.chat_jid, logContent || '[Media Message]');
 
   // 关键优化：减少上下文深度，仅保留最近 15 条，防止 AI 纠缠历史话题
   const recentMessages = getRecentMessages(msg.chat_jid, 15);
@@ -638,7 +650,7 @@ async function runAgent(
           const ttsPath = await generateTts(cmd.text);
           if (ttsPath) {
             await sendMessage(chatJid, '', { filePath: ttsPath, ptt: true, quoted: quotedMsg });
-            if (parentId) addInteractionResponse(parentId, 'Audio', cmd.text);
+            if (parentId) addInteractionResponse(parentId, 'Audio', path.basename(ttsPath));
             actionExecuted = true;
           }
         } else if (cmd.type === 'show_menu' && cmd.text && cmd.options && !menuShown) {

@@ -2,12 +2,14 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import basicAuth from 'basic-auth';
-import { getInteractionLog, getDailyStats } from './db.js';
+import { getInteractionLog, getDailyStats, getInteractionTask, storeGenericMessage } from './db.js';
 import { logger } from './logger.js';
 import { DATA_DIR } from './config.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+app.use(express.json());
 
 const USERNAME = process.env.DASHBOARD_USER || 'admin';
 const PASSWORD = process.env.DASHBOARD_PASS || 'admin';
@@ -49,6 +51,33 @@ app.get('/api/log', (req, res) => {
     } catch (err) {
         logger.error({ err }, 'Failed to fetch interaction log');
         res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.post('/api/retry', (req, res) => {
+    const { id } = req.body;
+    if (!id) return res.status(400).json({ error: 'Missing task ID' });
+
+    const task = getInteractionTask(id);
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+
+    try {
+        // Create a new message to trigger reprocessing
+        const newId = `retry-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        storeGenericMessage({
+            id: newId,
+            chat_jid: task.session_id,
+            sender_jid: task.session_id, // Assuming session_id is chat_jid/sender
+            content: task.content,
+            timestamp: new Date().toISOString(),
+            from_me: false // Treat as user message to trigger processing
+        });
+        
+        logger.info({ originalId: id, newId }, 'Task retry initiated');
+        res.json({ success: true, newId });
+    } catch (err) {
+        logger.error({ err, id }, 'Failed to retry task');
+        res.status(500).json({ error: 'Retry failed' });
     }
 });
 

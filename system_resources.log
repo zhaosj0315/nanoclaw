@@ -1,0 +1,15 @@
+Processes: 1067 total, 5 running, 1062 sleeping, 7032 threads 
+2026/02/07 15:02:46
+Load Avg: 6.29, 6.04, 6.26 
+CPU usage: 14.64% user, 18.61% sys, 66.74% idle 
+SharedLibs: 1108M resident, 175M data, 299M linkedit.
+MemRegions: 820301 total, 10G resident, 562M private, 5034M shared.
+PhysMem: 34G used (5871M wired, 5473M compressor), 786M unused.
+VM: 493T vsize, 5361M framework vsize, 0(0) swapins, 0(0) swapouts.
+Networks: packets: 10626140/7673M in, 22443996/21G out.
+Disks: 10884386/161G read, 4091120/105G written.
+
+PID    COMMAND          %CPU TIME     #TH    #WQ  #PORTS MEM   PURG  CMPRS PGRP  PPID  STATE    BOOSTS        %CPU_ME %CPU_OTHRS UID FAULTS   COW   MSGSENT   MSGRECV   SYSBSD    SYSMACH   CSW       PAGEINS IDLEW   POWER INSTRS CYCLES JETPRI USER                  #MREGS RPRVT VPRVT VSIZE KPRVT KSHRD
+96194  zsh              0.0  00:00.52 1      0    22     6160K 0B    896K  96194 96187 sleeping *0[1]         0.00000 0.00000    501 26983    2189  338       163       379733    566       985       3       0       0.0   0      0      180    zhaosj                N/A    N/A   N/A   N/A   N/A   N/A  
+96187  zsh (kiro-cli-te 0.0  00:33.75 22     1    63     26M   0B    13M   96186 96186 sleeping *0[1]         0.00000 0.00000    501 10032    571   422       256       2575663   7298      1731118   6       14937   0.0   0      0      180    zhaosj                N/A    N/A   N/A   N/A   N/A   N/A  
+96186  login            0.0  00:00.01 2      1    32     2528K 0B    2144K 96186 1575  sleeping *0[9]         0.00000 0.00000    0   1097     199   96        40        3459      323       69        1       0       0.0   0      0      180    root                  N/A    N/A   N/A   N/A   N/A   N/A  

@@ -358,6 +358,10 @@ export function getDailyStats() {
   };
 }
 
+export function getInteractionTask(id: string): InteractionTask | undefined {
+  return db.prepare('SELECT * FROM interaction_tasks WHERE id = ?').get(id) as InteractionTask | undefined;
+}
+
 export function getInteractionLog(limit = 50) {
   // Returns a structured object with tasks and their responses
   const tasks = db.prepare(`

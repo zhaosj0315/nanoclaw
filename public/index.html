@@ -42,40 +42,100 @@
         }
         .tooltip-text {
             visibility: hidden;
-            width: 120px;
+            width: 140px;
             background-color: #1e293b;
             color: #fff;
             text-align: center;
             border-radius: 6px;
-            padding: 5px;
+            padding: 8px;
             position: absolute;
-            z-index: 1;
+            z-index: 50;
             bottom: 125%; /* Position above */
             left: 50%;
-            margin-left: -60px;
+            margin-left: -70px;
             opacity: 0;
             transition: opacity 0.3s;
             font-size: 10px;
             border: 1px solid #334155;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            pointer-events: none;
         }
         .tooltip-container:hover .tooltip-text {
             visibility: visible;
             opacity: 1;
         }
+        /* Task Flow Styles */
+        .task-flow {
+            position: relative;
+            padding-left: 16px;
+            margin-left: 4px;
+            border-left: 2px dashed rgba(51, 65, 85, 0.5);
+        }
+        .task-node {
+            position: relative;
+            margin-bottom: 8px;
+        }
+        .task-node::before {
+            content: '';
+            position: absolute;
+            left: -21px; 
+            top: 10px;
+            width: 10px;
+            height: 2px;
+            background-color: rgba(51, 65, 85, 0.5);
+        }
+        .task-node:last-child {
+            margin-bottom: 0;
+        }
         /* Zebra striping */
         tbody tr:nth-child(even) {
             background-color: rgba(30, 41, 59, 0.3);
+        }
+        
+        /* New Task Animation */
+        @keyframes flash-new {
+            0% { box-shadow: inset 4px 0 0 0 #10b981, inset 0 0 20px rgba(16, 185, 129, 0.1); background-color: rgba(16, 185, 129, 0.1); }
+            100% { box-shadow: inset 0 0 0 0 transparent; background-color: transparent; }
+        }
+        .new-task {
+            animation: flash-new 2s ease-out;
+        }
+
+        /* Filter Tags */
+        .filter-tag {
+            cursor: pointer;
+            opacity: 0.5;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+        .filter-tag:hover {
+            opacity: 0.8;
+        }
+        .filter-tag.active {
+            opacity: 1;
+            background-color: rgba(51, 65, 85, 0.5);
+            border-color: rgba(71, 85, 105, 0.5);
+            box-shadow: 0 0 10px rgba(0,0,0,0.2);
         }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-300 font-mono p-4 h-screen flex flex-col overflow-hidden">
     <div class="w-full h-full flex flex-col">
         <header class="mb-4 flex justify-between items-center shrink-0 px-2">
-            <h1 class="text-xl font-bold flex items-center gap-3">
-                <img src="/assets/logo.png" class="h-6 w-6" alt="Logo" onerror="this.style.display='none'">
-                <span class="tracking-tighter uppercase"><span class="text-emerald-500">NanoClaw</span> <span class="text-slate-500">Tactical_Log</span></span>
-            </h1>
+            <div class="flex items-center gap-8">
+                <h1 class="text-xl font-bold flex items-center gap-3">
+                    <img src="/assets/logo.png" class="h-6 w-6" alt="Logo" onerror="this.style.display='none'">
+                    <span class="tracking-tighter uppercase"><span class="text-emerald-500">NanoClaw</span> <span class="text-slate-500">Tactical_Log</span></span>
+                </h1>
+                
+                <!-- Filters -->
+                <div class="flex gap-2 text-[9px] uppercase font-black tracking-widest">
+                    <div class="filter-tag px-2 py-1 rounded bg-slate-900 text-slate-400 border border-slate-800" onclick="toggleFilter('media')" id="filter-media">Media_Only</div>
+                    <div class="filter-tag px-2 py-1 rounded bg-slate-900 text-amber-500 border border-slate-800" onclick="toggleFilter('slow')" id="filter-slow">High_Latency</div>
+                    <div class="filter-tag px-2 py-1 rounded bg-slate-900 text-red-500 border border-slate-800" onclick="toggleFilter('failed')" id="filter-failed">Failed/Warn</div>
+                </div>
+            </div>
+
             <div class="flex items-center gap-6">
                 <div id="daily-stats" class="hidden md:flex gap-4 px-4 py-1.5 bg-slate-900/80 rounded border border-slate-800 text-[10px] font-bold tracking-tight">
                     <div class="flex flex-col">
@@ -103,8 +163,8 @@
                     <thead class="bg-slate-950 text-slate-500 uppercase text-[10px] sticky top-0 z-10 shadow-md">
                         <tr class="border-b border-slate-800">
                             <th class="px-3 py-2 w-[80px] font-black">Time</th>
-                            <th class="px-3 py-2 w-[100px] font-black">Status</th>
-                            <th class="px-3 py-2 w-[60px] font-black">Dur.</th>
+                            <th class="px-3 py-2 w-[110px] font-black">Status</th>
+                            <th class="px-3 py-2 w-[65px] font-black">Dur.</th>
                             <th class="px-3 py-2 w-[110px] font-black">Session</th>
                             <th class="px-3 py-2 w-[30%] font-black">Question</th>
                             <th class="px-3 py-2 font-black">Answer / Tactical Actions</th>
@@ -119,7 +179,7 @@
     </div>
 
     <!-- Image Preview Modal -->
-    <div id="image-modal" class="fixed inset-0 bg-black/90 hidden items-center justify-center z-50" onclick="this.classList.add('hidden')">
+    <div id="image-modal" class="fixed inset-0 bg-black/95 hidden items-center justify-center z-50" onclick="this.classList.add('hidden')">
         <img id="modal-img" src="" class="max-w-[95%] max-h-[95%] rounded border border-slate-700 shadow-2xl">
     </div>
 
@@ -132,28 +192,64 @@
         const INTENT_KEYWORDS = ["发", "画", "生成", "文件", "图", "语音", "播报", "send", "generate", "image", "voice"];
         const ACTION_TYPES = ["File", "Image", "Audio"];
 
+        let activeFilters = { media: false, slow: false, failed: false };
+        let seenIds = new Set();
+
+        function toggleFilter(type) {
+            activeFilters[type] = !activeFilters[type];
+            document.getElementById(`filter-${type}`).classList.toggle('active', activeFilters[type]);
+            renderCurrentData(); // Re-render with existing data if possible, or wait for next fetch
+        }
+
+        let lastData = { log: [], stats: null };
+
         function formatTime(isoString) {
             const date = new Date(isoString);
             return date.toLocaleTimeString('zh-CN', { hour12: false });
         }
 
-        function getStatusBadge(status, hasWarning) {
+        async function retryTask(id) {
+            if (!confirm('Retry this task?')) return;
+            try {
+                const res = await fetch('/api/retry', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id })
+                });
+                if (res.ok) {
+                    statusIndicator.textContent = 'RETRY_INITIATED';
+                    setTimeout(() => statusIndicator.textContent = 'Live_Feed', 2000);
+                }
+                else alert('Retry failed.');
+            } catch (e) {
+                console.error(e);
+                alert('Error retrying task.');
+            }
+        }
+
+        function getStatusBadge(status, hasWarning, id) {
+            let badge = '';
             if (status === 'PENDING') {
-                return `<div class="status-breathe inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-950/50 text-amber-400 border border-amber-800/50 text-[10px] font-bold uppercase">
+                badge = `<div class="status-breathe inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-950/50 text-amber-400 border border-amber-800/50 text-[10px] font-bold uppercase">
                     <div class="w-1.5 h-1.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]"></div>
                     Active
                 </div>`;
-            }
-            if (hasWarning) {
-                return `<div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-red-950/50 text-red-400 border border-red-800/50 text-[10px] font-bold uppercase" title="Intent mismatch: No media produced">
+            } else if (hasWarning) {
+                badge = `<div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-red-950/50 text-red-400 border border-red-800/50 text-[10px] font-bold uppercase" title="Intent mismatch: No media produced">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
                     Alert
                 </div>`;
+            } else {
+                badge = `<div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-950/50 text-emerald-400 border border-emerald-800/50 text-[10px] font-bold uppercase">
+                    <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                    Resolved
+                </div>`;
             }
-            return `<div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-950/50 text-emerald-400 border border-emerald-800/50 text-[10px] font-bold uppercase">
-                <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
-                Resolved
-            </div>`;
+
+            if (status !== 'PENDING') {
+                badge = `<div class="flex items-center gap-2">${badge}<button onclick="retryTask('${id}')" class="text-slate-600 hover:text-white transition-colors text-[14px]" title="Retry Task">↺</button></div>`;
+            }
+            return badge;
         }
 
         function getDurationBadge(ms, usage) {
@@ -182,39 +278,57 @@
         window.showImage = showImage;
 
         function renderResponses(responses) {
-            if (!responses || responses.length === 0) return '<span class="text-slate-700 italic">Processing stream...</span>';
+            if (!responses || responses.length === 0) return '<span class="text-slate-700 italic text-[10px]">Processing stream...</span>';
             
-            return responses.map(r => {
+            let nodesHtml = responses.map((r, index) => {
                 let content = r.content;
                 let badge = '';
+                let nodeClass = 'text-slate-400';
                 
                 if (content.startsWith('[Status]')) {
-                    badge = '<span class="text-[9px] bg-slate-800 text-slate-500 px-1 py-0.5 rounded mr-1.5 border border-slate-700/50 uppercase font-black">Task</span>';
+                    badge = '<span class="text-[9px] bg-slate-800 text-slate-500 px-1 py-0.5 rounded border border-slate-700/50 uppercase font-black tracking-tighter">Step</span>';
                     content = content.replace('[Status]', '').trim();
+                    nodeClass = 'text-slate-500 italic text-[11px]';
                 } else if (r.type === 'File') {
-                    badge = '<span class="text-[9px] bg-blue-950 text-blue-400 px-1 py-0.5 rounded mr-1.5 border border-blue-900/50 uppercase font-black">File</span>';
+                    badge = '<span class="text-[9px] bg-blue-950 text-blue-400 px-1 py-0.5 rounded border border-blue-900/50 uppercase font-black tracking-tighter">File</span>';
                     const fileName = content.split('/').pop();
                     content = `<a href="/media/${fileName}" target="_blank" class="text-blue-400 hover:text-blue-300 underline decoration-blue-800/50 underline-offset-4 transition-all">${fileName}</a>`;
                 } else if (r.type === 'Image') {
-                    badge = '<span class="text-[9px] bg-purple-950 text-purple-400 px-1 py-0.5 rounded mr-1.5 border border-purple-900/50 uppercase font-black">Visual</span>';
+                    badge = '<span class="text-[9px] bg-purple-950 text-purple-400 px-1 py-0.5 rounded border border-purple-900/50 uppercase font-black tracking-tighter">Visual</span>';
                     const fileName = content.split('/').pop();
                     const url = `/media/${fileName}`;
-                    content = `<div class="inline-flex items-center gap-2 group cursor-pointer" onclick="showImage('${url}')">
-                        <span class="text-purple-400 group-hover:text-purple-300 transition-colors">${fileName}</span>
-                        <div class="relative w-5 h-5 rounded border border-purple-500/30 overflow-hidden bg-black/40">
-                             <img src="${url}" class="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity">
+                    content = `<div class="inline-flex items-center gap-2 group cursor-pointer mt-1" onclick="showImage('${url}')">
+                        <div class="relative w-8 h-8 rounded border border-purple-500/30 overflow-hidden bg-black/40">
+                             <img src="${url}" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity">
                         </div>
+                        <span class="text-purple-400 text-[10px] group-hover:text-purple-300 transition-colors">${fileName}</span>
                     </div>`;
                 } else if (r.type === 'Audio') {
-                    badge = '<span class="text-[9px] bg-rose-950 text-rose-400 px-1 py-0.5 rounded mr-1.5 border border-rose-900/50 uppercase font-black">Voice</span>';
-                    content = `<span class="text-rose-300/80">"${content}"</span>`;
+                    badge = '<span class="text-[9px] bg-rose-950 text-rose-400 px-1 py-0.5 rounded border border-rose-900/50 uppercase font-black tracking-tighter">Voice</span>';
+                    // Only treat as file if it looks like one (has extension) and isn't too long
+                    if (content.match(/\.(ogg|mp3|wav)$/i) && content.length < 256) {
+                        const url = `/media/${encodeURIComponent(content)}`;
+                        content = `<div class="mt-1 w-full max-w-[240px] flex items-center gap-2">
+                            <audio controls src="${url}" class="h-6 w-full opacity-60 hover:opacity-100 transition-opacity scale-90 origin-left"></audio>
+                        </div>`;
+                    } else {
+                        // Fallback for text-only TTS logs or missing files
+                        content = `<span class="text-rose-300/80 italic">"${content}"</span>`;
+                    }
+                } else {
+                    nodeClass = 'text-slate-300';
                 }
 
-                return `<div class="py-1 border-b border-slate-800/30 last:border-0 text-slate-400 leading-relaxed flex items-start">
-                    <div class="mt-0.5 shrink-0">${badge}</div>
-                    <div class="break-words w-full">${content}</div>
+                return `<div class="task-node ${nodeClass} flex flex-col items-start leading-tight">
+                    <div class="flex items-center gap-2 mb-0.5">
+                        ${badge ? `<div>${badge}</div>` : ''}
+                        ${!badge ? `<div class="w-1.5 h-1.5 rounded-full bg-slate-600"></div>` : ''} 
+                    </div>
+                    <div class="break-words w-full pl-1">${content}</div>
                 </div>`;
             }).join('');
+
+            return `<div class="task-flow pt-1 pb-1">${nodesHtml}</div>`;
         }
 
         function renderSession(sessionId) {
@@ -224,7 +338,13 @@
             const color = colors[Math.abs(hash) % colors.length];
             let display = sessionId.includes('@') ? sessionId.split('@')[0] : sessionId;
             if (display.length > 14) display = display.substring(0, 12) + '..';
-            return `<span class="${color} font-bold tracking-tight">${display}</span>`;
+            
+            return `<span class="${color} font-bold tracking-tight cursor-pointer hover:underline decoration-dashed underline-offset-4" onclick="openSessionDrawer('${sessionId}')">${display}</span>`;
+        }
+
+        function openSessionDrawer(sessionId) {
+            console.log("Open drawer for:", sessionId);
+            alert("Session history for " + sessionId + " coming soon.");
         }
 
         function checkIntentWarning(question, responses) {
@@ -233,47 +353,65 @@
             return !responses || !responses.some(r => ACTION_TYPES.includes(r.type));
         }
 
+        function renderCurrentData() {
+            const { log, stats } = lastData;
+            if (stats) {
+                document.getElementById('daily-stats').classList.remove('hidden');
+                document.getElementById('stat-tasks').textContent = stats.total_tasks;
+                document.getElementById('stat-tokens').textContent = stats.total_tokens.toLocaleString();
+                document.getElementById('stat-latency').textContent = (stats.avg_duration / 1000).toFixed(1) + 's';
+            }
+
+            const filteredLog = log.filter(task => {
+                const hasMedia = task.responses.some(r => ACTION_TYPES.includes(r.type));
+                const isSlow = task.duration_ms > 15000;
+                const isFailed = task.status === 'RESOLVED' && checkIntentWarning(task.content, task.responses);
+
+                if (activeFilters.media && !hasMedia) return false;
+                if (activeFilters.slow && !isSlow) return false;
+                if (activeFilters.failed && !isFailed) return false;
+                return true;
+            });
+
+            logBody.innerHTML = filteredLog.map(task => {
+                const hasWarning = task.status === 'RESOLVED' && checkIntentWarning(task.content, task.responses);
+                const isNew = !seenIds.has(task.id);
+                if (isNew) seenIds.add(task.id);
+
+                return `
+                <tr class="hover:bg-slate-800/40 transition-colors group ${isNew ? 'new-task' : ''}">
+                    <td class="px-3 py-2 align-middle text-slate-600 font-bold tabular-nums">
+                        ${formatTime(task.created_at)}
+                    </td>
+                    <td class="px-3 py-2 align-middle">
+                        ${getStatusBadge(task.status, hasWarning, task.id)}
+                    </td>
+                    <td class="px-3 py-2 align-middle">
+                        ${getDurationBadge(task.duration_ms, task.token_usage)}
+                    </td>
+                    <td class="px-3 py-2 align-middle">
+                        ${renderSession(task.session_id)}
+                    </td>
+                    <td class="px-3 py-2 align-top text-slate-200 leading-snug whitespace-normal break-words pt-3">
+                        ${task.content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}
+                    </td>
+                    <td class="px-3 py-2 align-top whitespace-normal pt-2.5">
+                        ${renderResponses(task.responses)}
+                    </td>
+                </tr>
+            `}).join('');
+        }
+
         async function fetchLog() {
             try {
                 const res = await fetch('/api/log');
                 if (res.status === 401) { window.location.reload(); return; }
-                const { log, stats } = await res.json();
+                lastData = await res.json();
                 
-                // Update stats
-                if (stats) {
-                    document.getElementById('daily-stats').classList.remove('hidden');
-                    document.getElementById('stat-tasks').textContent = stats.total_tasks;
-                    document.getElementById('stat-tokens').textContent = stats.total_tokens.toLocaleString();
-                    document.getElementById('stat-latency').textContent = (stats.avg_duration / 1000).toFixed(1) + 's';
-                }
-
                 statusIndicator.textContent = `Live_Feed: ${new Date().toLocaleTimeString()}`;
                 statusIndicator.classList.remove('text-red-500');
                 
-                logBody.innerHTML = log.map(task => {
-                    const hasWarning = task.status === 'RESOLVED' && checkIntentWarning(task.content, task.responses);
-                    return `
-                    <tr class="hover:bg-slate-800/40 transition-colors group">
-                        <td class="px-3 py-2 align-top text-slate-600 font-bold tabular-nums">
-                            ${formatTime(task.created_at)}
-                        </td>
-                        <td class="px-3 py-2 align-top">
-                            ${getStatusBadge(task.status, hasWarning)}
-                        </td>
-                        <td class="px-3 py-2 align-top">
-                            ${getDurationBadge(task.duration_ms, task.token_usage)}
-                        </td>
-                        <td class="px-3 py-2 align-top">
-                            ${renderSession(task.session_id)}
-                        </td>
-                        <td class="px-3 py-2 align-top text-slate-200 leading-snug whitespace-normal break-words">
-                            ${task.content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}
-                        </td>
-                        <td class="px-3 py-2 align-top whitespace-normal">
-                            ${renderResponses(task.responses)}
-                        </td>
-                    </tr>
-                `}).join('');
+                renderCurrentData();
             } catch (err) {
                 statusIndicator.textContent = 'Link_Broken';
                 statusIndicator.classList.add('text-red-500');
