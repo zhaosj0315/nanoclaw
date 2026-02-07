@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NanoClaw Interaction Log</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         .animate-spin-slow {
             animation: spin 3s linear infinite;
@@ -50,7 +51,7 @@
             padding: 8px;
             position: absolute;
             z-index: 50;
-            bottom: 125%; /* Position above */
+            bottom: 125%; 
             left: 50%;
             margin-left: -70px;
             opacity: 0;
@@ -101,6 +102,48 @@
             animation: flash-new 2s ease-out;
         }
 
+        /* Filter Tags */
+        .filter-tag {
+            cursor: pointer;
+            opacity: 0.5;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+        .filter-tag:hover {
+            opacity: 0.8;
+        }
+        .filter-tag.active {
+            opacity: 1;
+            background-color: rgba(51, 65, 85, 0.5);
+            border-color: rgba(71, 85, 105, 0.5);
+            box-shadow: 0 0 10px rgba(0,0,0,0.2);
+        }
+
+        /* Intent Mismatch Red Tint */
+        .intent-mismatch {
+            background-color: rgba(127, 29, 29, 0.1) !important;
+            box-shadow: inset 3px 0 0 0 rgba(239, 68, 68, 0.5);
+        }
+
+        /* Drawer Styles */
+        .drawer {
+            position: fixed;
+            top: 0;
+            right: -650px;
+            width: 650px;
+            height: 100vh;
+            background-color: #0f172a;
+            border-left: 1px solid #334155;
+            transition: right 0.3s ease-in-out;
+            z-index: 100;
+            box-shadow: -15px 0 30px rgba(0,0,0,0.6);
+            display: flex;
+            flex-direction: column;
+        }
+        .drawer.open {
+            right: 0;
+        }
+
         /* Line Clamp for Question */
         .line-clamp-3 {
             display: -webkit-box;
@@ -111,40 +154,57 @@
         .group:hover .line-clamp-3 {
             -webkit-line-clamp: unset;
         }
+
+        .markdown-body h1 { font-size: 1.5rem; font-weight: bold; margin-bottom: 1rem; border-bottom: 1px solid #334155; padding-bottom: 0.5rem; color: #10b981; }
+        .markdown-body h2 { font-size: 1.25rem; font-weight: bold; margin-top: 1.5rem; margin-bottom: 0.75rem; color: #34d399; }
+        .markdown-body p { margin-bottom: 1rem; line-height: 1.6; }
+        .markdown-body ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 1rem; }
+        .markdown-body li { margin-bottom: 0.25rem; }
+        .markdown-body code { background-color: #1e293b; padding: 0.2rem 0.4rem; border-radius: 4px; font-family: monospace; font-size: 0.9em; }
+        .markdown-body pre { background-color: #1e293b; padding: 1rem; border-radius: 8px; overflow-x: auto; margin-bottom: 1rem; border: 1px solid #334155; }
+        .markdown-body table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
+        .markdown-body th, .markdown-body td { border: 1px solid #334155; padding: 0.5rem; text-align: left; }
+        .markdown-body th { background-color: #1e293b; }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-300 font-mono p-4 h-screen flex flex-col overflow-hidden">
     <div class="w-full h-full flex flex-col">
         <header class="mb-4 flex justify-between items-center shrink-0 px-2">
-            <!-- ... (Header content remains same) ... -->
             <div class="flex items-center gap-8">
                 <h1 class="text-xl font-bold flex items-center gap-3">
                     <img src="/assets/logo.png" class="h-6 w-6" alt="Logo" onerror="this.style.display='none'">
                     <span class="tracking-tighter uppercase"><span class="text-emerald-500">NanoClaw</span> <span class="text-slate-500">Tactical_Log</span></span>
                 </h1>
                 
+                <div class="relative">
+                    <input type="text" id="search-box" placeholder="SEARCH_LOGS..." 
+                           class="bg-slate-900 border border-slate-800 rounded px-3 py-1 text-[10px] w-48 focus:outline-none focus:border-emerald-500/50 transition-colors placeholder-slate-700"
+                           oninput="renderCurrentData()">
+                    <div class="absolute right-2 top-1.5 text-[9px] text-slate-700 pointer-events-none">CMD+F</div>
+                </div>
+
                 <!-- Filters -->
                 <div class="flex gap-2 text-[9px] uppercase font-black tracking-widest">
-                    <div class="filter-tag px-2 py-1 rounded bg-slate-900 text-slate-400 border border-slate-800" onclick="toggleFilter('media')" id="filter-media">Media_Only</div>
-                    <div class="filter-tag px-2 py-1 rounded bg-slate-900 text-amber-500 border border-slate-800" onclick="toggleFilter('slow')" id="filter-slow">High_Latency</div>
-                    <div class="filter-tag px-2 py-1 rounded bg-slate-900 text-red-500 border border-slate-800" onclick="toggleFilter('failed')" id="filter-failed">Failed/Warn</div>
+                    <div class="filter-tag px-2 py-1 rounded bg-slate-900 text-slate-400 border border-slate-800" onclick="toggleFilter('media')" id="filter-media">Media</div>
+                    <div class="filter-tag px-2 py-1 rounded bg-slate-900 text-amber-500 border border-slate-800" onclick="toggleFilter('slow')" id="filter-slow">Slow</div>
+                    <div class="filter-tag px-2 py-1 rounded bg-slate-900 text-red-500 border border-slate-800" onclick="toggleFilter('failed')" id="filter-failed">Warn</div>
                 </div>
             </div>
 
             <div class="flex items-center gap-6">
                 <div id="daily-stats" class="hidden md:flex gap-4 px-4 py-1.5 bg-slate-900/80 rounded border border-slate-800 text-[10px] font-bold tracking-tight">
                     <div class="flex flex-col">
-                        <span class="text-slate-500 uppercase">Daily_Tasks</span>
+                        <span class="text-slate-500 uppercase font-black">Tasks</span>
                         <span id="stat-tasks" class="text-emerald-400 font-mono">-</span>
                     </div>
                     <div class="w-px bg-slate-800 self-stretch"></div>
                     <div class="flex flex-col">
-                        <span class="text-slate-500 uppercase">Total_Tokens</span>
+                        <span class="text-slate-500 uppercase font-black">Tokens</span>
                         <span id="stat-tokens" class="text-sky-400 font-mono">-</span>
                     </div>
                     <div class="w-px bg-slate-800 self-stretch"></div>
                     <div class="flex flex-col">
-                        <span class="text-slate-500 uppercase">Avg_Latency</span>
+                        <span class="text-slate-500 uppercase font-black">Latency</span>
                         <span id="stat-latency" class="text-amber-400 font-mono">-</span>
                     </div>
                 </div>
@@ -166,15 +226,26 @@
                         </tr>
                     </thead>
                     <tbody id="log-body" class="divide-y divide-slate-800/50">
-                        <!-- Rows will be injected here -->
+                        <!-- Rows -->
                     </tbody>
                 </table>
             </div>
         </div>
     </div>
 
-    <!-- Image Preview Modal -->
-    <div id="image-modal" class="fixed inset-0 bg-black/95 hidden items-center justify-center z-50" onclick="this.classList.add('hidden')">
+    <!-- Drawer -->
+    <div id="drawer" class="drawer">
+        <div class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
+            <h2 class="text-sm font-black uppercase text-emerald-500 tracking-widest" id="drawer-title">File_Preview</h2>
+            <button onclick="closeDrawer()" class="text-slate-500 hover:text-white transition-colors">✕ CLOSE</button>
+        </div>
+        <div id="drawer-content" class="flex-1 overflow-auto p-6 markdown-body text-slate-300 text-sm">
+            <!-- Content -->
+        </div>
+    </div>
+
+    <!-- Image Modal -->
+    <div id="image-modal" class="fixed inset-0 bg-black/95 hidden items-center justify-center z-[150]" onclick="this.classList.add('hidden')">
         <img id="modal-img" src="" class="max-w-[95%] max-h-[95%] rounded border border-slate-700 shadow-2xl">
     </div>
 
@@ -183,12 +254,17 @@
         const logBody = document.getElementById('log-body');
         const imageModal = document.getElementById('image-modal');
         const modalImg = document.getElementById('modal-img');
+        const drawer = document.getElementById('drawer');
+        const drawerContent = document.getElementById('drawer-content');
+        const drawerTitle = document.getElementById('drawer-title');
+        const searchBox = document.getElementById('search-box');
 
         const INTENT_KEYWORDS = ["发", "画", "生成", "文件", "图", "语音", "播报", "send", "generate", "image", "voice"];
         const ACTION_TYPES = ["File", "Image", "Audio"];
 
         let activeFilters = { media: false, slow: false, failed: false };
         let seenIds = new Set();
+        let lastData = { log: [], stats: null };
 
         function toggleFilter(type) {
             activeFilters[type] = !activeFilters[type];
@@ -196,7 +272,25 @@
             renderCurrentData(); 
         }
 
-        let lastData = { log: [], stats: null };
+        async function openFileInDrawer(filename) {
+            drawerTitle.textContent = `PREVIEW: ${filename}`;
+            drawerContent.innerHTML = '<div class="text-slate-500 animate-pulse">Loading_Content...</div>';
+            drawer.classList.add('open');
+            
+            try {
+                const res = await fetch(`/media/${filename}`);
+                const text = await res.text();
+                if (filename.endsWith('.md')) {
+                    drawerContent.innerHTML = marked.parse(text);
+                } else {
+                    drawerContent.innerHTML = `<pre><code>${text.replace(/</g, '&lt;')}</code></pre>`;
+                }
+            } catch (e) {
+                drawerContent.innerHTML = `<div class="text-red-500">FAILED_TO_LOAD_FILE</div>`;
+            }
+        }
+
+        function closeDrawer() { drawer.classList.remove('open'); }
 
         function formatTime(isoString) {
             const date = new Date(isoString);
@@ -204,245 +298,100 @@
         }
 
         async function retryTask(id) {
-            if (!confirm('Retry this task?')) return;
+            if (!confirm('RETRY_TASK?')) return;
             try {
                 const res = await fetch('/api/retry', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id })
                 });
-                if (res.ok) {
-                    statusIndicator.textContent = 'RETRY_INITIATED';
-                    setTimeout(() => statusIndicator.textContent = 'Live_Feed', 2000);
-                }
-                else alert('Retry failed.');
-            } catch (e) {
-                console.error(e);
-                alert('Error retrying task.');
-            }
+                if (res.ok) statusIndicator.textContent = 'TASK_REQUEUED';
+            } catch (e) { console.error(e); }
         }
 
         function getStatusBadge(status, hasWarning, id) {
             let badge = '';
             if (status === 'PENDING') {
-                badge = `<div class="status-breathe inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-950/50 text-amber-400 border border-amber-800/50 text-[10px] font-bold uppercase">
-                    <div class="w-1.5 h-1.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]"></div>
-                    Active
-                </div>`;
+                badge = `<div class="status-breathe inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-950/50 text-amber-400 border border-amber-800/50 text-[9px] font-black uppercase w-full justify-center">RUN</div>`;
             } else if (hasWarning) {
-                badge = `<div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-red-950/50 text-red-400 border border-red-800/50 text-[10px] font-bold uppercase" title="Intent mismatch: No media produced">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
-                    Alert
-                </div>`;
+                badge = `<div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-red-950/50 text-red-400 border border-red-800/50 text-[9px] font-black uppercase w-full justify-center">WARN</div>`;
             } else {
-                badge = `<div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-950/50 text-emerald-400 border border-emerald-800/50 text-[10px] font-bold uppercase">
-                    <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
-                    Resolved
-                </div>`;
+                badge = `<div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-950/50 text-emerald-400 border border-emerald-800/50 text-[9px] font-black uppercase w-full justify-center">DONE</div>`;
             }
-
             if (status !== 'PENDING') {
-                badge = `<div class="flex items-center gap-2">${badge}<button onclick="retryTask('${id}')" class="text-slate-600 hover:text-white transition-colors text-[14px]" title="Retry Task">↺</button></div>`;
+                badge = `<div class="flex flex-col gap-1 items-center w-full">${badge}<button onclick="retryTask('${id}')" class="text-slate-600 hover:text-white transition-colors text-[9px] uppercase tracking-tighter opacity-50 hover:opacity-100 font-bold">↺ RE-RUN</button></div>`;
             }
             return badge;
         }
 
-        function getDurationBadge(ms, usage) {
+        function getDurationBadge(ms, usage, hasWarning) {
             if (!ms) return '<span class="text-slate-700">-</span>';
             const sec = (ms / 1000).toFixed(1) + 's';
-            let colorClass = 'text-emerald-500/80';
-            if (ms > 15000) colorClass = 'text-amber-500/80';
-            if (ms > 30000) colorClass = 'text-red-500 font-bold';
+            let colorClass = 'text-emerald-400';
+            if (ms > 15000) colorClass = 'text-amber-400';
+            if (ms > 30000) colorClass = 'text-red-400 font-black';
             
-            let tooltip = 'Processing...';
-            if (usage) {
-                tooltip = `Total Tokens: ${usage.total}<br>Prompt: ${usage.prompt}<br>Comp: ${usage.completion}`;
-            }
+            let tokenInfo = usage ? `<span class="text-slate-500 text-[9px] font-mono">${(usage.total / 1000).toFixed(1)}k tok</span>` : '<span class="text-slate-700">-</span>';
+            let phantomIndicator = hasWarning ? `<div class="mt-1 w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.8)]" title="PHANTOM_ACTION_DETECTED"></div>` : '';
 
-            return `<div class="tooltip-container">
-                <span class="${colorClass} tabular-nums font-bold cursor-help border-b border-dotted border-slate-600">${sec}</span>
-                <span class="tooltip-text">${tooltip}</span>
+            return `<div class="flex flex-col items-start leading-none gap-1">
+                <div class="flex items-center gap-2">
+                    <span class="${colorClass} tabular-nums font-bold text-[11px]">${sec}</span>
+                    ${phantomIndicator}
+                </div>
+                ${tokenInfo}
             </div>`;
         }
 
-        function showImage(url) {
-            modalImg.src = url;
-            imageModal.classList.remove('hidden');
-            imageModal.classList.add('flex');
-        }
+        function showImage(url) { modalImg.src = url; imageModal.classList.remove('hidden'); imageModal.classList.add('flex'); }
         window.showImage = showImage;
 
         function renderResponses(responses, attachments = []) {
-            if (!responses || responses.length === 0) return '<span class="text-slate-700 italic text-[10px]">Processing stream...</span>';
-            
-            let nodesHtml = responses.map((r, index) => {
+            if (!responses || responses.length === 0) return '<span class="text-slate-700 italic text-[10px]">Thinking...</span>';
+            const findPath = (filename) => attachments.find(a => a.includes(filename)) || filename;
+            return `<div class="task-flow pt-1 pb-1 w-full">${responses.map(r => {
                 let content = r.content;
                 let badge = '';
-                let nodeClass = 'text-slate-400';
-                
-                const findPath = (filename) => attachments.find(a => a.includes(filename)) || filename;
-
                 if (content.startsWith('[Status]')) {
-                    badge = '<span class="text-[9px] bg-slate-800 text-slate-500 px-1 py-0.5 rounded border border-slate-700/50 uppercase font-black tracking-tighter">Step</span>';
+                    badge = '<span class="text-[8px] bg-slate-800 text-slate-500 px-1 py-0.5 rounded uppercase font-black">Step</span>';
                     content = content.replace('[Status]', '').trim();
-                    nodeClass = 'text-slate-500 italic text-[11px]';
                 } else if (r.type === 'File') {
-                    const absPath = findPath(content.split('/').pop());
-                    badge = `<span class="text-[9px] bg-blue-950 text-blue-400 px-1 py-0.5 rounded border border-blue-900/50 uppercase font-black tracking-tighter cursor-help" title="Local Path: ${absPath}">File</span>`;
                     const fileName = content.split('/').pop();
-                    content = `<a href="/media/${fileName}" target="_blank" class="text-blue-400 hover:text-blue-300 underline decoration-blue-800/50 underline-offset-4 transition-all">${fileName}</a>`;
+                    badge = `<span class="text-[8px] bg-blue-950 text-blue-400 px-1 py-0.5 rounded uppercase font-black cursor-pointer" onclick="openFileInDrawer('${fileName}')">File</span>`;
+                    content = `<span class="text-blue-400 underline decoration-blue-800/50 cursor-pointer" onclick="openFileInDrawer('${fileName}')">${fileName}</span>`;
                 } else if (r.type === 'Image') {
                     const fileName = content.split('/').pop();
-                    const absPath = findPath(fileName);
-                    const url = `/media/${fileName}`;
-                    badge = `<span class="text-[9px] bg-purple-950 text-purple-400 px-1 py-0.5 rounded border border-purple-900/50 uppercase font-black cursor-help" title="Local Path: ${absPath}">Visual</span>`;
-                    content = `<div class="inline-flex items-center gap-2 group cursor-pointer mt-1" onclick="showImage('${url}')">
-                        <div class="relative w-8 h-8 rounded border border-purple-500/30 overflow-hidden bg-black/40">
-                             <img src="${url}" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity">
-                        </div>
-                        <span class="text-purple-400 text-[10px] group-hover:text-purple-300 transition-colors">${fileName}</span>
+                    badge = '<span class="text-[8px] bg-purple-950 text-purple-400 px-1 py-0.5 rounded uppercase font-black">Visual</span>';
+                    content = `<div class="inline-flex items-center gap-2 group cursor-pointer mt-1" onclick="showImage('/media/${fileName}')">
+                        <img src="/media/${fileName}" class="w-8 h-8 rounded border border-purple-500/30 object-cover opacity-80 group-hover:opacity-100 transition-opacity">
+                        <span class="text-purple-400 text-[10px]">${fileName}</span>
                     </div>`;
                 } else if (r.type === 'Audio') {
-                    badge = '<span class="text-[9px] bg-rose-950 text-rose-400 px-1 py-0.5 rounded border border-rose-900/50 uppercase font-black tracking-tighter">Voice</span>';
-                    if (content.match(/\.(ogg|mp3|wav)$/i) && content.length < 256) {
-                        const url = `/media/${encodeURIComponent(content)}`;
-                        content = `<div class="mt-1 w-full max-w-[240px] flex items-center gap-2">
-                            <audio controls src="${url}" class="h-6 w-full opacity-60 hover:opacity-100 transition-opacity scale-90 origin-left"></audio>
-                        </div>`;
-                    } else {
-                        content = `<span class="text-rose-300/80 italic">"${content}"</span>`;
-                    }
-                } else {
-                    nodeClass = 'text-slate-300';
-                    content = content.replace(/(image_\w+\.jpg|voice_\w+\.ogg|[\w-]+\.(?:pdf|md|png|jpg|xlsx))/gi, (match) => {
-                        const ext = match.split('.').pop().toLowerCase();
-                        const url = `/media/${match}`;
-                        if (['jpg', 'png', 'jpeg'].includes(ext)) {
-                            return `<span class="text-purple-400 underline cursor-pointer" onclick="showImage('${url}')">${match}</span>`;
-                        }
-                        return `<a href="${url}" target="_blank" class="text-blue-400 underline">${match}</a>`;
-                    });
+                    badge = '<span class="text-[8px] bg-rose-950 text-rose-400 px-1 py-0.5 rounded uppercase font-black">Voice</span>';
+                    content = `<audio controls src="/media/${encodeURIComponent(content)}" class="h-5 w-full opacity-60 hover:opacity-100 scale-90 origin-left"></audio>`;
                 }
-
-                return `<div class="task-node ${nodeClass} flex flex-col items-start leading-tight">
-                    <div class="flex items-center gap-2 mb-0.5">
-                        ${badge ? `<div>${badge}</div>` : ''}
-                        ${!badge ? `<div class="w-1.5 h-1.5 rounded-full bg-slate-600"></div>` : ''} 
-                    </div>
-                    <div class="break-words w-full pl-1">${content}</div>
+                return `<div class="task-node text-slate-400 flex flex-col items-start leading-tight">
+                    <div class="flex items-center gap-2 mb-0.5">${badge || '<div class="w-1 h-1 rounded-full bg-slate-700"></div>'}</div>
+                    <div class="break-words w-full pl-1 max-w-full text-[11px]">${content}</div>
                 </div>`;
-            }).join('');
-
-            return `<div class="task-flow pt-1 pb-1">${nodesHtml}</div>`;
+            }).join('')}</div>`;
         }
 
         function renderSession(sessionId) {
-            let hash = 0;
-            for (let i = 0; i < sessionId.length; i++) hash = sessionId.charCodeAt(i) + ((hash << 5) - hash);
+            let hash = 0; for (let i = 0; i < sessionId.length; i++) hash = sessionId.charCodeAt(i) + ((hash << 5) - hash);
             const colors = ['text-sky-400', 'text-rose-400', 'text-violet-400', 'text-cyan-400', 'text-emerald-400'];
-            const color = colors[Math.abs(hash) % colors.length];
-            let display = sessionId.includes('@') ? sessionId.split('@')[0] : sessionId;
-            if (display.length > 14) display = display.substring(0, 12) + '..';
-            
-            return `<span class="${color} font-bold tracking-tight cursor-pointer hover:underline decoration-dashed underline-offset-4" onclick="openSessionDrawer('${sessionId}')">${display}</span>`;
-        }
-
-        function openSessionDrawer(sessionId) {
-            console.log("Open drawer for:", sessionId);
-            alert("Session history for " + sessionId + " coming soon.");
+            return `<div class="flex items-center gap-1 cursor-pointer group" onclick="openSessionDrawer('${sessionId}')">
+                <span class="${colors[Math.abs(hash) % colors.length]} font-bold text-[11px]">..${sessionId.slice(-4)}</span>
+            </div>`;
         }
 
         function renderQuestion(content, attachments = []) {
             if (!content) return '';
-            let safeContent = content.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            
-            const renderPath = (filename) => {
-                const absPath = attachments.find(a => a.includes(filename)) || filename;
-                return `<div class="text-[9px] text-slate-600 font-mono mt-0.5 break-all opacity-50 hover:opacity-100 transition-opacity leading-none">${absPath}</div>`;
-            };
-
-            safeContent = safeContent.replace(/\[IMAGE: (.*?)\]/g, (match, filename) => {
-                const url = `/media/${filename}`;
-                return `<div class="inline-block align-top ml-1 mb-1">
-                    <div class="inline-flex items-center gap-1.5 align-middle group cursor-pointer" onclick="showImage('${url}')">
-                        <span class="text-[9px] bg-purple-950 text-purple-400 px-1 rounded border border-purple-900/50 uppercase font-black">IMG</span>
-                        <div class="relative w-4 h-4 rounded overflow-hidden bg-black/40 border border-purple-500/30">
-                            <img src="${url}" class="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity">
-                        </div>
-                    </div>
-                    ${renderPath(filename)}
-                </div>`;
-            });
-            
-            safeContent = safeContent.replace(/\[AUDIO: (.*?)\]/g, (match, filename) => {
-                return `<div class="inline-block align-top ml-1 mb-1">
-                    <span class="text-[9px] bg-rose-950 text-rose-400 px-1 rounded border border-rose-900/50 uppercase font-black align-middle">VOICE</span>
-                    ${renderPath(filename)}
-                </div>`;
-            });
-
-            safeContent = safeContent.replace(/\[VIDEO: (.*?)\]/g, (match, filename) => {
-                return `<div class="inline-block align-top ml-1 mb-1">
-                    <span class="text-[9px] bg-cyan-950 text-cyan-400 px-1 rounded border border-cyan-900/50 uppercase font-black align-middle">VIDEO</span>
-                    ${renderPath(filename)}
-                </div>`;
-            });
-
-            safeContent = safeContent.replace(/\[DOC: (.*?)\]/g, (match, filename) => {
-                return `<div class="inline-block align-top ml-1 mb-1">
-                    <span class="text-[9px] bg-blue-950 text-blue-400 px-1 rounded border border-blue-900/50 uppercase font-black align-middle">DOC</span>
-                    ${renderPath(filename)}
-                </div>`;
-            });
-            return safeContent;
-        }
-
-        function renderCurrentData() {
-            const { log, stats } = lastData;
-            if (stats) {
-                document.getElementById('daily-stats').classList.remove('hidden');
-                document.getElementById('stat-tasks').textContent = stats.total_tasks;
-                document.getElementById('stat-tokens').textContent = stats.total_tokens.toLocaleString();
-                document.getElementById('stat-latency').textContent = (stats.avg_duration / 1000).toFixed(1) + 's';
-            }
-
-            const filteredLog = log.filter(task => {
-                const hasMedia = task.responses.some(r => ACTION_TYPES.includes(r.type));
-                const isSlow = task.duration_ms > 15000;
-                const isFailed = task.status === 'RESOLVED' && checkIntentWarning(task.content, task.responses);
-                if (activeFilters.media && !hasMedia) return false;
-                if (activeFilters.slow && !isSlow) return false;
-                if (activeFilters.failed && !isFailed) return false;
-                return true;
-            });
-
-            logBody.innerHTML = filteredLog.map(task => {
-                const hasWarning = task.status === 'RESOLVED' && checkIntentWarning(task.content, task.responses);
-                const isNew = !seenIds.has(task.id);
-                if (isNew) seenIds.add(task.id);
-
-                return `
-                <tr class="hover:bg-slate-800/40 transition-colors group ${isNew ? 'new-task' : ''}">
-                    <td class="px-3 py-2 align-middle text-slate-600 font-bold tabular-nums">
-                        ${formatTime(task.created_at)}
-                    </td>
-                    <td class="px-3 py-2 align-middle">
-                        ${getStatusBadge(task.status, hasWarning, task.id)}
-                    </td>
-                    <td class="px-3 py-2 align-middle">
-                        ${getDurationBadge(task.duration_ms, task.token_usage)}
-                    </td>
-                    <td class="px-3 py-2 align-middle">
-                        ${renderSession(task.session_id)}
-                    </td>
-                    <td class="px-3 py-2 align-middle text-slate-200 leading-snug whitespace-normal break-words pt-3">
-                        ${renderQuestion(task.content, task.attachments)}
-                    </td>
-                    <td class="px-3 py-2 align-top whitespace-normal pt-2.5">
-                        ${renderResponses(task.responses, task.attachments)}
-                    </td>
-                </tr>
-            `}).join('');
+            let safe = content.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const renderPath = (f) => `<div class="text-[8px] text-slate-700 font-mono break-all leading-none mt-0.5">${attachments.find(a => a.includes(f)) || f}</div>`;
+            safe = safe.replace(/\[IMAGE: (.*?)\]/g, (m, f) => `<div class="inline-block align-top mb-1"><span class="text-[8px] bg-purple-950 text-purple-400 px-1 rounded font-black">IMG</span>${renderPath(f)}</div>`);
+            safe = safe.replace(/\[AUDIO: (.*?)\]/g, (m, f) => `<div class="inline-block align-top mb-1"><span class="text-[8px] bg-rose-950 text-rose-400 px-1 rounded font-black">VOICE</span>${renderPath(f)}</div>`);
+            return safe;
         }
 
         function checkIntentWarning(question, responses) {
@@ -451,22 +400,45 @@
             return !responses || !responses.some(r => ACTION_TYPES.includes(r.type));
         }
 
+        function renderCurrentData() {
+            const { log, stats } = lastData;
+            const query = searchBox.value.toLowerCase();
+            if (stats) {
+                document.getElementById('daily-stats').classList.remove('hidden');
+                document.getElementById('stat-tasks').textContent = stats.total_tasks;
+                document.getElementById('stat-tokens').textContent = stats.total_tokens.toLocaleString();
+                document.getElementById('stat-latency').textContent = (stats.avg_duration / 1000).toFixed(1) + 's';
+            }
+            logBody.innerHTML = log.filter(t => {
+                const textMatch = t.content.toLowerCase().includes(query) || t.responses.some(r => r.content.toLowerCase().includes(query));
+                if (!textMatch) return false;
+                if (activeFilters.media && !t.responses.some(r => ACTION_TYPES.includes(r.type))) return false;
+                if (activeFilters.slow && t.duration_ms <= 15000) return false;
+                if (activeFilters.failed && !(t.status === 'RESOLVED' && checkIntentWarning(t.content, t.responses))) return false;
+                return true;
+            }).map(t => {
+                const hasWarning = t.status === 'RESOLVED' && checkIntentWarning(t.content, t.responses);
+                const isNew = !seenIds.has(t.id); if (isNew) seenIds.add(t.id);
+                return `<tr class="hover:bg-slate-800/40 transition-colors group ${isNew ? 'new-task' : ''} ${hasWarning ? 'intent-mismatch' : ''}">
+                    <td class="px-3 py-3 align-top text-slate-600 font-bold text-[10px]">${formatTime(t.created_at)}</td>
+                    <td class="px-3 py-3 align-top">${getStatusBadge(t.status, hasWarning, t.id)}</td>
+                    <td class="px-3 py-3 align-top">${getDurationBadge(t.duration_ms, t.token_usage, hasWarning)}</td>
+                    <td class="px-3 py-3 align-top">${renderSession(t.session_id)}</td>
+                    <td class="px-3 py-3 align-top text-slate-300 w-[20%]"><div class="line-clamp-3 text-[11px]">${renderQuestion(t.content, t.attachments)}</div></td>
+                    <td class="px-3 py-3 align-top w-[60%]">${renderResponses(t.responses, t.attachments)}</td></tr>`;
+            }).join('');
+        }
+
         async function fetchLog() {
             try {
                 const res = await fetch('/api/log');
                 if (res.status === 401) { window.location.reload(); return; }
                 lastData = await res.json();
-                statusIndicator.textContent = `Live_Feed: ${new Date().toLocaleTimeString()}`;
-                statusIndicator.classList.remove('text-red-500');
+                statusIndicator.textContent = `FEED_SYNCED: ${new Date().toLocaleTimeString()}`;
                 renderCurrentData();
-            } catch (err) {
-                statusIndicator.textContent = 'Link_Broken';
-                statusIndicator.classList.add('text-red-500');
-            }
+            } catch (e) { statusIndicator.textContent = 'LINK_OFFLINE'; }
         }
-
-        setInterval(fetchLog, 2000);
-        fetchLog();
+        setInterval(fetchLog, 2000); fetchLog();
     </script>
 </body>
 </html>
