@@ -349,6 +349,18 @@ export function getInteractionLog(limit = 20, offset = 0) {
   return { tasks: result, total };
 }
 
+export function getAllMemories() {
+  return db.prepare('SELECT * FROM memories ORDER BY created_at DESC').all() as any[];
+}
+
+export function getAllTaskRuns(limit = 50) {
+  return db.prepare('SELECT * FROM task_runs ORDER BY run_at DESC LIMIT ?').all(limit) as any[];
+}
+
+export function getAllKV() {
+  return db.prepare('SELECT * FROM kv_store').all() as { key: string; value: string }[];
+}
+
 export function getDailyStats() {
   const today = new Date().toISOString().split('T')[0];
   const stats = db.prepare(`
