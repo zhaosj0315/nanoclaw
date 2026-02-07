@@ -1470,7 +1470,9 @@ async function main(): Promise<void> {
   initDatabase();
   logger.info('Database initialized');
   loadState();
-  await fetchSystemIp();
+  
+  // 异步获取 IP，不阻塞主流程启动
+  fetchSystemIp().catch(() => {});
 
   // Initialize Lark Connector
   larkConnector = new LarkConnector(async (msg) => {

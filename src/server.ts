@@ -63,11 +63,17 @@ app.get('/media/:filename', (req, res) => {
 
 app.get('/api/log', (req, res) => {
     try {
-        const log = getInteractionLog(50);
-        const stats = getDailyStats();
+        const log = getInteractionLog(50) || [];
+        const stats = getDailyStats() || { total_tasks: 0, total_tokens: 0, avg_duration: 0 };
         
-        // 捕获访问者 IP
-        const visitorIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+        // 极致兼容的访问者 IP 捕捉
+        let visitorIp = '127.0.0.1';
+        try {
+            visitorIp = (req.headers['x-forwarded-for'] as string) || req.ip || req.socket.remoteAddress || '127.0.0.1';
+            if (visitorIp.includes('::ffff:')) visitorIp = visitorIp.replace('::ffff:', '');
+        } catch (ipErr) {
+            logger.debug('Visitor IP resolution failed');
+        }
         
         res.json({ 
             log, 
@@ -77,8 +83,8 @@ app.get('/api/log', (req, res) => {
             } 
         });
     } catch (err) {
-        logger.error({ err }, 'Failed to fetch interaction log');
-        res.status(500).json({ error: 'Internal Server Error' });
+        logger.error({ err }, 'Critical failure in /api/log');
+        res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', detail: (err as Error).message });
     }
 });
 
