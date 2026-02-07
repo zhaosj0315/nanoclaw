@@ -616,14 +616,16 @@ async function runAgent(
 
     iterations++;
     try {
-      // 构造媒体文件清单，帮助模型建立视觉/听觉数据与文件名的 1:1 映射
-      const mediaManifest = mediaFiles.map((f, i) => `[附件 ${i + 1}] 文件名: ${path.basename(f)} (路径: ${f})`).join('\n');
+      // 构造极其强烈的多模态提示，确保模型不会忽略附件
+      const mediaManifest = mediaFiles.map((f, i) => `[附件 ${i + 1}] 名称: ${path.basename(f)} (绝对路径: ${f})`).join('\n');
       
-      const multimodalContext = mediaFiles.length > 0 
-        ? `--- 实时附件映射清单 ---\n${mediaManifest}\n\n系统说明：你当前收到了 ${mediaFiles.length} 个媒体文件作为原始输入。在下方的对话历史中，它们通过 [图片附件: 文件名] 或 [语音附件: 文件名] 的形式被引用。请务必根据清单中的文件名与附件序号的对应关系，精确分析对应的视觉/听觉内容。`
+      const multimodalSystemInstruction = mediaFiles.length > 0 
+        ? `【重要：多模态输入说明】\n你当前已载入了 ${mediaFiles.length} 个原始媒体文件。请根据以下清单建立文件名与视觉/听觉数据的映射：\n${mediaManifest}\n\n在接下来的对话历史中，用户提到的 [图片附件: xxx] 即指向清单中对应的文件。请务必优先分析这些文件的内容，禁止产生与这些文件无关的幻觉。`
         : '';
 
-      const finalPrompt = `${multimodalContext}\n\n${currentPrompt}`;
+      const finalPrompt = multimodalSystemInstruction 
+        ? `${multimodalSystemInstruction}\n\n${currentPrompt}`
+        : currentPrompt;
 
       const result = await runLocalGemini(finalPrompt, group.name, mediaFiles);
 

@@ -277,7 +277,7 @@
         }
         window.showImage = showImage;
 
-        function renderResponses(responses) {
+        function renderResponses(responses, attachments = []) {
             if (!responses || responses.length === 0) return '<span class="text-slate-700 italic text-[10px]">Processing stream...</span>';
             
             let nodesHtml = responses.map((r, index) => {
@@ -285,18 +285,22 @@
                 let badge = '';
                 let nodeClass = 'text-slate-400';
                 
+                const findPath = (filename) => attachments.find(a => a.includes(filename)) || filename;
+
                 if (content.startsWith('[Status]')) {
                     badge = '<span class="text-[9px] bg-slate-800 text-slate-500 px-1 py-0.5 rounded border border-slate-700/50 uppercase font-black tracking-tighter">Step</span>';
                     content = content.replace('[Status]', '').trim();
                     nodeClass = 'text-slate-500 italic text-[11px]';
                 } else if (r.type === 'File') {
-                    badge = '<span class="text-[9px] bg-blue-950 text-blue-400 px-1 py-0.5 rounded border border-blue-900/50 uppercase font-black tracking-tighter">File</span>';
+                    const absPath = findPath(content.split('/').pop());
+                    badge = `<span class="text-[9px] bg-blue-950 text-blue-400 px-1 py-0.5 rounded border border-blue-900/50 uppercase font-black tracking-tighter cursor-help" title="Local Path: ${absPath}">File</span>`;
                     const fileName = content.split('/').pop();
                     content = `<a href="/media/${fileName}" target="_blank" class="text-blue-400 hover:text-blue-300 underline decoration-blue-800/50 underline-offset-4 transition-all">${fileName}</a>`;
                 } else if (r.type === 'Image') {
-                    badge = '<span class="text-[9px] bg-purple-950 text-purple-400 px-1 py-0.5 rounded border border-purple-900/50 uppercase font-black tracking-tighter">Visual</span>';
                     const fileName = content.split('/').pop();
+                    const absPath = findPath(fileName);
                     const url = `/media/${fileName}`;
+                    badge = `<span class="text-[9px] bg-purple-950 text-purple-400 px-1 py-0.5 rounded border border-purple-900/50 uppercase font-black cursor-help" title="Local Path: ${absPath}">Visual</span>`;
                     content = `<div class="inline-flex items-center gap-2 group cursor-pointer mt-1" onclick="showImage('${url}')">
                         <div class="relative w-8 h-8 rounded border border-purple-500/30 overflow-hidden bg-black/40">
                              <img src="${url}" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity">
@@ -315,7 +319,6 @@
                     }
                 } else {
                     nodeClass = 'text-slate-300';
-                    // Link internal file references in text responses
                     content = content.replace(/(image_\w+\.jpg|voice_\w+\.ogg|[\w-]+\.(?:pdf|md|png|jpg|xlsx))/gi, (match) => {
                         const ext = match.split('.').pop().toLowerCase();
                         const url = `/media/${match}`;
@@ -354,20 +357,33 @@
             alert("Session history for " + sessionId + " coming soon.");
         }
 
-        function renderQuestion(content) {
+        function renderQuestion(content, attachments = []) {
             if (!content) return '';
             let safeContent = content.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            
+            const renderPath = (filename) => {
+                const absPath = attachments.find(a => a.includes(filename)) || filename;
+                return `<div class="text-[9px] text-slate-600 font-mono mt-0.5 break-all opacity-50 hover:opacity-100 transition-opacity leading-none">${absPath}</div>`;
+            };
+
             safeContent = safeContent.replace(/\[IMAGE: (.*?)\]/g, (match, filename) => {
                 const url = `/media/${filename}`;
-                return `<div class="inline-flex items-center gap-1.5 ml-1 align-middle group cursor-pointer" onclick="showImage('${url}')">
-                    <span class="text-[9px] bg-purple-950 text-purple-400 px-1 rounded border border-purple-900/50 uppercase font-black">IMG</span>
-                    <div class="relative w-4 h-4 rounded overflow-hidden bg-black/40 border border-purple-500/30">
-                        <img src="${url}" class="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity">
+                return `<div class="inline-block align-top ml-1 mb-1">
+                    <div class="inline-flex items-center gap-1.5 align-middle group cursor-pointer" onclick="showImage('${url}')">
+                        <span class="text-[9px] bg-purple-950 text-purple-400 px-1 rounded border border-purple-900/50 uppercase font-black">IMG</span>
+                        <div class="relative w-4 h-4 rounded overflow-hidden bg-black/40 border border-purple-500/30">
+                            <img src="${url}" class="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity">
+                        </div>
                     </div>
+                    ${renderPath(filename)}
                 </div>`;
             });
+            
             safeContent = safeContent.replace(/\[AUDIO: (.*?)\]/g, (match, filename) => {
-                return `<span class="text-[9px] bg-rose-950 text-rose-400 px-1 rounded border border-rose-900/50 uppercase font-black align-middle ml-1">VOICE</span>`;
+                return `<div class="inline-block align-top ml-1 mb-1">
+                    <span class="text-[9px] bg-rose-950 text-rose-400 px-1 rounded border border-rose-900/50 uppercase font-black align-middle">VOICE</span>
+                    ${renderPath(filename)}
+                </div>`;
             });
             return safeContent;
         }
@@ -411,10 +427,10 @@
                         ${renderSession(task.session_id)}
                     </td>
                     <td class="px-3 py-2 align-middle text-slate-200 leading-snug whitespace-normal break-words pt-3">
-                        ${renderQuestion(task.content)}
+                        ${renderQuestion(task.content, task.attachments)}
                     </td>
                     <td class="px-3 py-2 align-top whitespace-normal pt-2.5">
-                        ${renderResponses(task.responses)}
+                        ${renderResponses(task.responses, task.attachments)}
                     </td>
                 </tr>
             `}).join('');
