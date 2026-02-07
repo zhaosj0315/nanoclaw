@@ -30,6 +30,7 @@ export class LarkConnector {
 
         const messageId = message.message_id;
         const msgType = (message as any).msg_type;
+        const chatId = message.chat_id.trim();
         let content = '';
         let attachments: string[] = [];
 
@@ -59,7 +60,7 @@ export class LarkConnector {
 
         const msg: NewMessage = {
           id: messageId,
-          chat_jid: `lark@${message.chat_id}`,
+          chat_jid: `lark@${chatId}`,
           sender: sender.sender_id?.open_id || 'unknown',
           sender_name: 'Lark User',
           content: content,

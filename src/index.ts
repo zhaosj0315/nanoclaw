@@ -1481,11 +1481,12 @@ async function main(): Promise<void> {
   larkConnector = new LarkConnector(async (msg) => {
     // 统一逻辑：连接器只负责“写入数据库”和“下载附件”
     // 处理逻辑由中央 messageLoop 统一调度，实现多端功能完全同步
-    logger.info({ id: msg.id, chat: msg.chat_jid }, 'Lark message received and queuing for processing');
+    const chatJid = msg.chat_jid.trim();
+    logger.info({ id: msg.id, chat: chatJid }, 'Lark message received and queuing for processing');
     
     storeGenericMessage({
       id: msg.id,
-      chat_jid: msg.chat_jid,
+      chat_jid: chatJid,
       sender_jid: msg.sender,
       sender_name: msg.sender_name,
       content: msg.content,
@@ -1494,8 +1495,8 @@ async function main(): Promise<void> {
     });
 
     // 自动将飞书会话注册到处理清单
-    if (!registeredGroups[msg.chat_jid]) {
-        registeredGroups[msg.chat_jid] = {
+    if (!registeredGroups[chatJid]) {
+        registeredGroups[chatJid] = {
             name: 'Lark Chat',
             folder: MAIN_GROUP_FOLDER,
             trigger: `@${ASSISTANT_NAME}`,
