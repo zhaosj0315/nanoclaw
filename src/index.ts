@@ -513,7 +513,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
   const typingInterval = setInterval(() => setTyping(msg.chat_jid, true), 5000);
   await setTyping(msg.chat_jid, true);
 
-  const response = await runAgent(group, prompt, msg.chat_jid, finalMediaFiles, quotedMsg, msg.id);
+  const response = await runAgent(group, prompt, msg.chat_jid, finalMediaFiles, quotedMsg, msg.id, currentAttachments);
   
   clearInterval(typingInterval);
   await setTyping(msg.chat_jid, false);
@@ -596,6 +596,7 @@ async function runAgent(
   mediaFiles: string[] = [],
   quotedMsg?: any,
   parentId?: string,
+  currentAttachments: string[] = [],
 ): Promise<string | null> {
   const { executeTools } = await import('./tool-executor.js');
   let currentPrompt = initialPrompt;
@@ -616,11 +617,16 @@ async function runAgent(
 
     iterations++;
     try {
-      // 构造极其强烈的多模态提示，确保模型不会忽略附件
+      // 构造媒体文件清单，帮助模型建立视觉/听觉数据与文件名的 1:1 映射
       const mediaManifest = mediaFiles.map((f, i) => `[附件 ${i + 1}] 名称: ${path.basename(f)} (绝对路径: ${f})`).join('\n');
       
+      // 构造“当前任务焦点”，明确告诉 AI 哪张图是刚才发的，必须优先处理
+      const currentFocus = currentAttachments.length > 0
+        ? `【当前交互焦点：全新上传文件】\n用户刚刚上传了以下文件，请务必针对这些文件进行分析：\n${currentAttachments.map(f => `- ${path.basename(f)} (${f})`).join('\n')}\n注意：如果这些文件的内容与之前的对话历史（如系统报告）存在冲突，请以这些文件的实时视觉内容为准！`
+        : '';
+
       const multimodalSystemInstruction = mediaFiles.length > 0 
-        ? `【重要：多模态输入说明】\n你当前已载入了 ${mediaFiles.length} 个原始媒体文件。请根据以下清单建立文件名与视觉/听觉数据的映射：\n${mediaManifest}\n\n在接下来的对话历史中，用户提到的 [图片附件: xxx] 即指向清单中对应的文件。请务必优先分析这些文件的内容，禁止产生与这些文件无关的幻觉。`
+        ? `【全链路附件清单】\n你当前载入了 ${mediaFiles.length} 个媒体文件作为背景上下文：\n${mediaManifest}\n\n${currentFocus}\n\n请结合清单中的文件名与视觉数据，根据下方的用户指令进行处理。`
         : '';
 
       const finalPrompt = multimodalSystemInstruction 
