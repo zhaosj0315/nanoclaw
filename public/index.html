@@ -35,6 +35,34 @@
         ::-webkit-scrollbar-thumb:hover {
             background: #475569; 
         }
+        /* Tooltip styles */
+        .tooltip-container {
+            position: relative;
+            display: inline-block;
+        }
+        .tooltip-text {
+            visibility: hidden;
+            width: 120px;
+            background-color: #1e293b;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%; /* Position above */
+            left: 50%;
+            margin-left: -60px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 10px;
+            border: 1px solid #334155;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .tooltip-container:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
         /* Zebra striping */
         tbody tr:nth-child(even) {
             background-color: rgba(30, 41, 59, 0.3);
@@ -48,7 +76,25 @@
                 <img src="/assets/logo.png" class="h-6 w-6" alt="Logo" onerror="this.style.display='none'">
                 <span class="tracking-tighter uppercase"><span class="text-emerald-500">NanoClaw</span> <span class="text-slate-500">Tactical_Log</span></span>
             </h1>
-            <div id="status-indicator" class="text-[10px] text-slate-600 font-mono tracking-widest uppercase">Initializing...</div>
+            <div class="flex items-center gap-6">
+                <div id="daily-stats" class="hidden md:flex gap-4 px-4 py-1.5 bg-slate-900/80 rounded border border-slate-800 text-[10px] font-bold tracking-tight">
+                    <div class="flex flex-col">
+                        <span class="text-slate-500 uppercase">Daily_Tasks</span>
+                        <span id="stat-tasks" class="text-emerald-400 font-mono">-</span>
+                    </div>
+                    <div class="w-px bg-slate-800 self-stretch"></div>
+                    <div class="flex flex-col">
+                        <span class="text-slate-500 uppercase">Total_Tokens</span>
+                        <span id="stat-tokens" class="text-sky-400 font-mono">-</span>
+                    </div>
+                    <div class="w-px bg-slate-800 self-stretch"></div>
+                    <div class="flex flex-col">
+                        <span class="text-slate-500 uppercase">Avg_Latency</span>
+                        <span id="stat-latency" class="text-amber-400 font-mono">-</span>
+                    </div>
+                </div>
+                <div id="status-indicator" class="text-[10px] text-slate-600 font-mono tracking-widest uppercase">Initializing...</div>
+            </div>
         </header>
 
         <div class="flex-1 overflow-hidden bg-slate-900/50 rounded-md shadow-2xl border border-slate-800 flex flex-col">
@@ -110,13 +156,22 @@
             </div>`;
         }
 
-        function getDurationBadge(ms) {
+        function getDurationBadge(ms, usage) {
             if (!ms) return '<span class="text-slate-700">-</span>';
             const sec = (ms / 1000).toFixed(1) + 's';
             let colorClass = 'text-emerald-500/80';
             if (ms > 15000) colorClass = 'text-amber-500/80';
             if (ms > 30000) colorClass = 'text-red-500 font-bold';
-            return `<span class="${colorClass} tabular-nums font-bold">${sec}</span>`;
+            
+            let tooltip = 'Processing...';
+            if (usage) {
+                tooltip = `Total Tokens: ${usage.total}<br>Prompt: ${usage.prompt}<br>Comp: ${usage.completion}`;
+            }
+
+            return `<div class="tooltip-container">
+                <span class="${colorClass} tabular-nums font-bold cursor-help border-b border-dotted border-slate-600">${sec}</span>
+                <span class="tooltip-text">${tooltip}</span>
+            </div>`;
         }
 
         function showImage(url) {
@@ -182,11 +237,20 @@
             try {
                 const res = await fetch('/api/log');
                 if (res.status === 401) { window.location.reload(); return; }
-                const data = await res.json();
+                const { log, stats } = await res.json();
+                
+                // Update stats
+                if (stats) {
+                    document.getElementById('daily-stats').classList.remove('hidden');
+                    document.getElementById('stat-tasks').textContent = stats.total_tasks;
+                    document.getElementById('stat-tokens').textContent = stats.total_tokens.toLocaleString();
+                    document.getElementById('stat-latency').textContent = (stats.avg_duration / 1000).toFixed(1) + 's';
+                }
+
                 statusIndicator.textContent = `Live_Feed: ${new Date().toLocaleTimeString()}`;
                 statusIndicator.classList.remove('text-red-500');
                 
-                logBody.innerHTML = data.map(task => {
+                logBody.innerHTML = log.map(task => {
                     const hasWarning = task.status === 'RESOLVED' && checkIntentWarning(task.content, task.responses);
                     return `
                     <tr class="hover:bg-slate-800/40 transition-colors group">
@@ -197,7 +261,7 @@
                             ${getStatusBadge(task.status, hasWarning)}
                         </td>
                         <td class="px-3 py-2 align-top">
-                            ${getDurationBadge(task.duration_ms)}
+                            ${getDurationBadge(task.duration_ms, task.token_usage)}
                         </td>
                         <td class="px-3 py-2 align-top">
                             ${renderSession(task.session_id)}

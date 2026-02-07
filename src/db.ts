@@ -34,6 +34,7 @@ export interface InteractionTask {
   status: 'PENDING' | 'RESOLVED';
   created_at: string;
   duration_ms?: number;
+  token_usage?: { prompt: number; completion: number; total: number };
 }
 
 export interface InteractionResponse {
@@ -99,7 +100,8 @@ export function initDatabase() {
       content TEXT,
       status TEXT,
       created_at DATETIME,
-      duration_ms INTEGER
+      duration_ms INTEGER,
+      token_usage TEXT
     );
     CREATE TABLE IF NOT EXISTS interaction_responses (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -300,7 +302,7 @@ export function createInteractionTask(id: string, session_id: string, content: s
   `).run(id, session_id, content, new Date().toISOString());
 }
 
-export function completeInteractionTask(id: string) {
+export function completeInteractionTask(id: string, usage?: { prompt: number; completion: number; total: number }) {
   const now = new Date();
   const task = db.prepare('SELECT created_at FROM interaction_tasks WHERE id = ?').get(id) as { created_at: string };
   
@@ -309,11 +311,13 @@ export function completeInteractionTask(id: string) {
     duration = now.getTime() - new Date(task.created_at).getTime();
   }
 
+  const usageStr = usage ? JSON.stringify(usage) : null;
+
   db.prepare(`
     UPDATE interaction_tasks 
-    SET status = 'RESOLVED', duration_ms = ?
+    SET status = 'RESOLVED', duration_ms = ?, token_usage = ?
     WHERE id = ?
-  `).run(duration, id);
+  `).run(duration, usageStr, id);
 }
 
 export function addInteractionResponse(parent_id: string, type: string, content: string) {
@@ -323,13 +327,50 @@ export function addInteractionResponse(parent_id: string, type: string, content:
   `).run(parent_id, type, content, new Date().toISOString());
 }
 
+export function getDailyStats() {
+  const today = new Date().toISOString().split('T')[0];
+  const stats = db.prepare(`
+    SELECT 
+      COUNT(*) as total_tasks,
+      AVG(duration_ms) as avg_duration,
+      SUM(CASE WHEN token_usage IS NOT NULL THEN 1 ELSE 0 END) as usage_count
+    FROM interaction_tasks 
+    WHERE created_at >= ?
+  `).get(today + 'T00:00:00.000Z') as any;
+
+  const tasks = db.prepare(`
+    SELECT token_usage FROM interaction_tasks 
+    WHERE created_at >= ? AND token_usage IS NOT NULL
+  `).all(today + 'T00:00:00.000Z') as { token_usage: string }[];
+
+  let total_tokens = 0;
+  tasks.forEach(t => {
+    try {
+      const usage = JSON.parse(t.token_usage);
+      total_tokens += usage.total || 0;
+    } catch (e) {}
+  });
+
+  return {
+    total_tasks: stats.total_tasks || 0,
+    avg_duration: Math.round(stats.avg_duration || 0),
+    total_tokens
+  };
+}
+
 export function getInteractionLog(limit = 50) {
   // Returns a structured object with tasks and their responses
   const tasks = db.prepare(`
     SELECT * FROM interaction_tasks 
     ORDER BY created_at DESC 
     LIMIT ?
-  `).all(limit) as InteractionTask[];
+  `).all(limit) as any[];
+
+  // Parse token_usage JSON if present
+  const tasksWithParsedUsage = tasks.map(t => ({
+    ...t,
+    token_usage: t.token_usage ? JSON.parse(t.token_usage) : null
+  }));
 
   const taskIds = tasks.map(t => t.id);
   if (taskIds.length === 0) return [];
@@ -342,7 +383,7 @@ export function getInteractionLog(limit = 50) {
   `).all(...taskIds) as InteractionResponse[];
 
   // Group responses by task
-  const result = tasks.map(task => ({
+  const result = tasksWithParsedUsage.map(task => ({
     ...task,
     responses: responses.filter(r => r.parent_id === task.id)
   }));

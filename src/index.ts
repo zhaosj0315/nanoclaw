@@ -585,6 +585,8 @@ async function runAgent(
   const MAX_ITERATIONS = 30; // 增加上限以应对复杂任务
   const taskStartTime = Date.now(); // 记录任务开始时间
 
+  let totalUsage = { prompt: 0, completion: 0, total: 0 };
+
   while (iterations < MAX_ITERATIONS) {
     // 检查是否有在此任务开始之后发出的中断指令
     if (globalInterruptTimestamp > taskStartTime) {
@@ -603,6 +605,12 @@ async function runAgent(
           'Local Gemini error',
         );
         return null;
+      }
+
+      if (result.usage) {
+        totalUsage.prompt += result.usage.prompt;
+        totalUsage.completion += result.usage.completion;
+        totalUsage.total += result.usage.total;
       }
 
       const responseText = result.response;
@@ -702,7 +710,7 @@ async function runAgent(
     }
   }
 
-  if (parentId) completeInteractionTask(parentId);
+  if (parentId) completeInteractionTask(parentId, totalUsage);
   if (finalResponse === '__MENU_SHOWN__' || finalResponse === '__SILENT_FINISH__') return '';
   return finalResponse || '任务执行超时或未给出明确答复。';
 }

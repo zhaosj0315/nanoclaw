@@ -8,6 +8,7 @@ export interface LocalRunnerResult {
   success: boolean;
   response?: string;
   error?: string;
+  usage?: { prompt: number; completion: number; total: number };
 }
 
 export async function runLocalGemini(
@@ -64,9 +65,19 @@ export async function runLocalGemini(
     gemini.on('close', (code) => {
       if (code === 0) {
         logger.info({ group: groupName }, 'Gemini completed successfully');
+        
+        // Simple token estimation: 1 token ~= 4 chars
+        const promptTokens = Math.ceil(fullPrompt.length / 4);
+        const completionTokens = Math.ceil(stdout.length / 4);
+
         resolve({
           success: true,
           response: stdout.trim(),
+          usage: {
+            prompt: promptTokens,
+            completion: completionTokens,
+            total: promptTokens + completionTokens
+          }
         });
       } else {
         logger.error({ group: groupName, code, stderr }, 'Gemini failed');

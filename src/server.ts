@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import basicAuth from 'basic-auth';
-import { getInteractionLog } from './db.js';
+import { getInteractionLog, getDailyStats } from './db.js';
 import { logger } from './logger.js';
 import { DATA_DIR } from './config.js';
 
@@ -44,7 +44,8 @@ app.use('/media/:filename', (req, res) => {
 app.get('/api/log', (req, res) => {
     try {
         const log = getInteractionLog(50);
-        res.json(log);
+        const stats = getDailyStats();
+        res.json({ log, stats });
     } catch (err) {
         logger.error({ err }, 'Failed to fetch interaction log');
         res.status(500).json({ error: 'Internal Server Error' });
