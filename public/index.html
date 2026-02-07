@@ -207,11 +207,6 @@
                         <span class="text-slate-500 uppercase font-black">Latency</span>
                         <span id="stat-latency" class="text-amber-400 font-mono">-</span>
                     </div>
-                    <div class="w-px bg-slate-800 self-stretch"></div>
-                    <div class="flex flex-col">
-                        <span class="text-slate-500 uppercase font-black">Audit_Node</span>
-                        <span id="visitor-node" class="text-rose-400 font-mono">-</span>
-                    </div>
                 </div>
                 <div id="status-indicator" class="text-[10px] text-slate-600 font-mono tracking-widest uppercase">Initializing...</div>
             </div>
@@ -222,11 +217,10 @@
                 <table class="w-full text-left text-[12px] border-collapse relative table-fixed">
                     <thead class="bg-slate-950 text-slate-500 uppercase text-[10px] sticky top-0 z-10 shadow-md">
                         <tr class="border-b border-slate-800 text-[10px]">
-                            <th class="px-3 py-2 w-[70px] min-w-[70px] font-black">Time</th>
-                            <th class="px-3 py-2 w-[90px] min-w-[90px] font-black">Status</th>
+                            <th class="px-3 py-2 w-[80px] min-w-[80px] font-black">Time</th>
+                            <th class="px-3 py-2 w-[110px] min-w-[110px] font-black">Status</th>
                             <th class="px-3 py-2 w-[80px] min-w-[80px] font-black">Metrics</th>
                             <th class="px-3 py-2 w-[120px] min-w-[120px] font-black">Session</th>
-                            <th class="px-3 py-2 w-[140px] min-w-[140px] font-black">Origin_Node</th>
                             <th class="px-3 py-2 w-[20%] font-black">Question</th>
                             <th class="px-3 py-2 font-black">Answer / Tactical Actions</th>
                         </tr>
@@ -264,19 +258,6 @@
         const drawerContent = document.getElementById('drawer-content');
         const drawerTitle = document.getElementById('drawer-title');
         const searchBox = document.getElementById('search-box');
-
-        const geoCache = new Map();
-        async function getGeo(ip) {
-            if (!ip || ip === '127.0.0.1' || ip.includes('::')) return 'LOCAL';
-            if (geoCache.has(ip)) return geoCache.get(ip);
-            try {
-                const res = await fetch(`http://ip-api.com/json/${ip}?fields=city,regionName`);
-                const data = await res.json();
-                const loc = data.city ? `${data.city}, ${data.regionName}` : 'UNKNOWN';
-                geoCache.set(ip, loc);
-                return loc;
-            } catch (e) { return 'ERROR'; }
-        }
 
         const INTENT_KEYWORDS = ["发", "画", "生成", "文件", "图", "语音", "播报", "send", "generate", "image", "voice"];
         const ACTION_TYPES = ["File", "Image", "Audio"];
@@ -385,33 +366,34 @@
 
         function renderResponses(responses, attachments = []) {
             if (!responses || responses.length === 0) return '<span class="text-slate-700 italic text-[10px]">Thinking...</span>';
-            const findPath = (filename) => attachments.find(a => a.includes(filename)) || filename;
-            return `<div class="task-flow pt-1 pb-1 w-full">${responses.map(r => {
+            
+            return `<div class="task-flow pt-1 pb-1 w-full space-y-1">${responses.map(r => {
                 let content = r.content;
                 let badge = '';
+                
                 if (content.startsWith('[Status]')) {
                     badge = '<span class="text-[8px] bg-slate-800 text-slate-500 px-1 py-0.5 rounded uppercase font-black">Step</span>';
-                    content = content.replace('[Status]', '').trim();
-                } else if (r.type === 'File') {
+                    content = `<span class="text-slate-500 italic">${content.replace('[Status]', '').trim()}</span>`;
+                } 
+                else if (r.type === 'File') {
                     const fileName = content.split('/').pop();
-                    badge = `<span class="text-[8px] bg-blue-950 text-blue-400 px-1 py-0.5 rounded uppercase font-black cursor-pointer" onclick="openFileInDrawer('${fileName}')">File</span>`;
-                    content = `<span class="text-blue-400 underline decoration-blue-800/50 cursor-pointer" onclick="openFileInDrawer('${fileName}')">${fileName}</span>`;
-                } else if (r.type === 'Image') {
+                    badge = `<span class="text-[8px] bg-blue-950 text-blue-400 px-1 py-0.5 rounded uppercase font-black cursor-pointer hover:bg-blue-900" onclick="openFileInDrawer('${fileName}')">FILE</span>`;
+                    content = `<span class="text-blue-400 underline decoration-blue-800/50 cursor-pointer text-[10px]" onclick="openFileInDrawer('${fileName}')">${fileName}</span>`;
+                } 
+                else if (r.type === 'Image') {
                     const fileName = content.split('/').pop();
-                    badge = '<span class="text-[8px] bg-purple-950 text-purple-400 px-1 py-0.5 rounded uppercase font-black">Visual</span>';
-                    content = `<div class="inline-flex items-center gap-2 group cursor-pointer mt-1" onclick="showImage('/media/${fileName}')">
-                        <img src="/media/${fileName}" class="w-8 h-8 rounded border border-purple-500/30 object-cover opacity-80 group-hover:opacity-100 transition-opacity">
-                        <span class="text-purple-400 text-[10px]">${fileName}</span>
-                    </div>`;
-                } else if (r.type === 'Audio') {
-                    badge = '<span class="text-[8px] bg-rose-950 text-rose-400 px-1 py-0.5 rounded uppercase font-black">Voice</span>';
-                    // Fix: Use the extracted filename directly for the source URL to avoid path issues
+                    badge = `<span class="text-[8px] bg-purple-950 text-purple-400 px-1 py-0.5 rounded uppercase font-black cursor-pointer hover:bg-purple-900" onclick="openFileInDrawer('${fileName}')">VISUAL</span>`;
+                    content = `<span class="text-purple-400 cursor-pointer text-[10px] hover:text-purple-300 transition-colors" onclick="openFileInDrawer('${fileName}')">Generated: ${fileName}</span>`;
+                } 
+                else if (r.type === 'Audio') {
                     const fileName = content.split('/').pop();
-                    content = `<audio controls src="/media/${encodeURIComponent(fileName)}" class="h-5 w-full opacity-60 hover:opacity-100 scale-90 origin-left"></audio>`;
+                    badge = `<span class="text-[8px] bg-rose-950 text-rose-400 px-1 py-0.5 rounded uppercase font-black cursor-pointer hover:bg-rose-900" onclick="openFileInDrawer('${encodeURIComponent(fileName)}')">VOICE</span>`;
+                    content = `<span class="text-rose-400 cursor-pointer text-[10px] hover:text-rose-300 transition-colors" onclick="openFileInDrawer('${encodeURIComponent(fileName)}')">Audio Output (${fileName.slice(0,8)}...)</span>`;
                 }
-                return `<div class="task-node text-slate-400 flex flex-col items-start leading-tight">
-                    <div class="flex items-center gap-2 mb-0.5">${badge || '<div class="w-1 h-1 rounded-full bg-slate-700"></div>'}</div>
-                    <div class="break-words w-full pl-1 max-w-full text-[11px]">${content}</div>
+
+                return `<div class="task-node text-slate-400 flex items-start gap-2 leading-tight">
+                    <div class="shrink-0 mt-0.5">${badge || '<div class="w-1.5 h-1.5 mt-1 rounded-full bg-slate-700"></div>'}</div>
+                    <div class="break-words w-full text-[11px] line-clamp-compact hover:line-clamp-none transition-all">${content}</div>
                 </div>`;
             }).join('')}</div>`;
         }
@@ -475,18 +457,9 @@
                     <td class="px-3 py-3 align-top">${getStatusBadge(t.status, hasWarning, t.id)}</td>
                     <td class="px-3 py-3 align-top">${getDurationBadge(t.duration_ms, t.token_usage, hasWarning)}</td>
                     <td class="px-3 py-3 align-top">${renderSession(t.session_id)}</td>
-                    <td class="px-3 py-3 align-top">
-                        <div class="flex flex-col gap-0.5">
-                            <span class="text-slate-400 font-mono text-[10px]">${t.origin_ip || 'NODE_LOCAL'}</span>
-                            <span class="text-[9px] text-rose-500/70 font-black uppercase tracking-tighter">${geoCache.get(t.origin_ip) || 'RESOLVING...'}</span>
-                        </div>
-                    </td>
                     <td class="px-3 py-3 align-top text-slate-300 w-[20%]"><div class="line-clamp-3 text-[11px]">${renderQuestion(t.content, t.attachments)}</div></td>
                     <td class="px-3 py-3 align-top w-[60%]">${renderResponses(t.responses, t.attachments)}</td></tr>`;
             }).join('');
-            
-            // Kick off geo resolution for any new IPs
-            log.forEach(t => { if (t.origin_ip && !geoCache.has(t.origin_ip)) getGeo(t.origin_ip).then(() => renderCurrentData()); });
         }
 
         async function fetchLog() {
@@ -494,13 +467,6 @@
                 const res = await fetch('/api/log');
                 if (res.status === 401) { window.location.reload(); return; }
                 lastData = await res.json();
-                
-                const { stats } = lastData;
-                if (stats && stats.visitor_ip) {
-                    const geo = await getGeo(stats.visitor_ip);
-                    document.getElementById('visitor-node').textContent = `${stats.visitor_ip} (${geo})`;
-                }
-
                 statusIndicator.textContent = `FEED_SYNCED: ${new Date().toLocaleTimeString()}`;
                 renderCurrentData();
             } catch (e) { statusIndicator.textContent = 'LINK_OFFLINE'; }
