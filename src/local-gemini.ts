@@ -41,21 +41,22 @@ export async function runLocalGemini(
 
     const fullPrompt = systemPrompt + prompt;
 
-    // 构建命令行参数：将媒体文件路径作为位置参数传入，实现原生多模态支持
-    // 注意：不能使用 -p 参数，因为那会与位置参数（媒体文件）冲突
-    const args = ['--output-format', 'text', '--approval-mode', 'yolo', ...mediaFiles];
+    // REFACTOR: Pass fullPrompt as the FIRST positional argument, followed by media files.
+    // This mimics the standard `gemini "prompt" image.jpg` usage which is proven to work for multimodal.
+    // We stop using stdin for the prompt to ensure the CLI treats it as the primary instruction linked to the media.
+    const args = ['--output-format', 'text', '--approval-mode', 'yolo', fullPrompt, ...mediaFiles];
 
-    logger.debug({ args }, 'Executing gemini CLI command via stdin');
+    logger.debug({ args: args.map(a => a.length > 50 ? a.substring(0, 20) + '...' : a) }, 'Executing gemini CLI command via ARGS');
 
     const gemini = spawn('gemini', args, {
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe'], // Ignore stdin as we pass prompt via args
     });
 
     let stdout = '';
     let stderr = '';
 
-    gemini.stdin.write(fullPrompt);
-    gemini.stdin.end();
+    // gemini.stdin.write(fullPrompt); // REMOVED
+    // gemini.stdin.end();             // REMOVED
 
     gemini.stdout.on('data', (data) => {
       stdout += data.toString();
