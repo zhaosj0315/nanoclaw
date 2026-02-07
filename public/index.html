@@ -533,7 +533,17 @@
         async function fetchLog() {
             try {
                 const res = await fetch('/api/log');
-                if (res.status === 401) { window.location.reload(); return; }
+                
+                if (res.status === 401) {
+                    statusIndicator.textContent = 'AUTH_REQUIRED';
+                    statusIndicator.classList.add('text-red-500', 'animate-pulse');
+                    return; // Stop processing but don't reload loop
+                }
+                
+                if (!res.ok) {
+                    throw new Error(`HTTP_${res.status}`);
+                }
+
                 lastData = await res.json();
                 
                 const { stats, log } = lastData;
@@ -563,8 +573,12 @@
                 }
 
                 statusIndicator.textContent = `FEED_SYNCED: ${new Date().toLocaleTimeString()}`;
+                statusIndicator.classList.remove('text-red-500', 'animate-pulse');
                 renderCurrentData();
-            } catch (e) { statusIndicator.textContent = 'LINK_OFFLINE'; }
+            } catch (e) { 
+                console.error(e);
+                statusIndicator.innerHTML = `<span class="text-red-500">LINK_OFFLINE: ${e.message}</span>`;
+            }
         }
         setInterval(fetchLog, 2000); fetchLog();
     </script>
