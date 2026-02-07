@@ -3,11 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NanoClaw Interaction Log</title>
+    <title>NanoClaw Tactical Terminal 5.0</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        .animate-spin-slow { animation: spin 3s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes breathe { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.6; transform: scale(0.95); } }
+        .status-breathe { animation: breathe 2s ease-in-out infinite; }
+        
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        
         /* Performance Waterfall Tooltip */
-        .perf-node { height: 4px; border-radius: 2px; }
+        .perf-node { height: 4px; border-radius: 2px; transition: width 0.3s ease; }
         .perf-pre { background-color: #10b981; }
         .perf-llm { background-color: #3b82f6; }
         .perf-post { background-color: #f59e0b; }
@@ -26,6 +36,40 @@
             100% { transform: scale(1); filter: drop-shadow(0 0 0px #ef4444); }
         }
         .fix-icon { animation: pulse-fix 1.5s infinite; cursor: pointer; }
+
+        /* Row Expansion Styles */
+        tr.group td { transition: padding 0.15s ease; }
+        tr.status-resolved td { padding-top: 6px; padding-bottom: 6px; }
+        tr:hover td, tr.status-pending td { padding-top: 12px; padding-bottom: 12px; }
+        
+        .line-clamp-compact { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+        tr:hover .line-clamp-compact { -webkit-line-clamp: unset; }
+
+        /* Drawer Styles */
+        .drawer {
+            position: fixed; top: 0; right: -650px; width: 650px; height: 100vh;
+            background-color: #0f172a; border-left: 1px solid #334155;
+            transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 100;
+            box-shadow: -15px 0 30px rgba(0,0,0,0.6); display: flex; flex-direction: column;
+        }
+        .drawer.open { right: 0; }
+
+        .prose-invert { color: #d1d5db; max-width: none; }
+        .prose-invert h1, .prose-invert h2 { color: #10b981; font-weight: 800; border-bottom: 1px solid #1e293b; padding-bottom: 0.5rem; margin-top: 1.5rem; }
+        .prose-invert code { background: #1e293b; padding: 0.2rem 0.4rem; border-radius: 4px; color: #34d399; }
+        .prose-invert pre { background: #020617; padding: 1rem; border-radius: 8px; border: 1px solid #1e293b; overflow-x: auto; }
+
+        /* Tooltip styles */
+        .tooltip-container { position: relative; display: inline-block; }
+        .tooltip-text {
+            visibility: hidden; width: 140px; background-color: #1e293b; color: #fff;
+            text-align: center; border-radius: 6px; padding: 8px; position: absolute;
+            z-index: 50; bottom: 125%; left: 50%; margin-left: -70px; opacity: 0;
+            transition: opacity 0.3s; font-size: 10px; border: 1px solid #334155; pointer-events: none;
+        }
+        .tooltip-container:hover .tooltip-text { visibility: visible; opacity: 1; }
+        
+        .intent-mismatch { background-color: rgba(127, 29, 29, 0.1) !important; box-shadow: inset 3px 0 0 0 #ef4444; }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-300 font-mono p-4 h-screen flex flex-col overflow-hidden">
@@ -40,9 +84,7 @@
                 <!-- Intent Heatmap -->
                 <div id="intent-heatmap" class="hidden lg:flex gap-3 px-3 py-1 bg-slate-900/50 rounded border border-slate-800 items-center">
                     <div class="text-[8px] text-slate-600 font-black rotate-180 [writing-mode:vertical-lr]">INTENT_MIX</div>
-                    <div id="heatmap-container" class="flex gap-2">
-                        <!-- Heatmap dots generated here -->
-                    </div>
+                    <div id="heatmap-container" class="flex gap-2"></div>
                 </div>
 
                 <div class="relative">
@@ -54,22 +96,22 @@
 
             <div class="flex items-center gap-6">
                 <div id="daily-stats" class="hidden md:flex gap-4 px-4 py-1.5 bg-slate-900/80 rounded border border-slate-800 text-[10px] font-bold tracking-tight">
-                    <div class="flex flex-col">
+                    <div class="flex flex-col text-center">
                         <span class="text-slate-500 uppercase font-black">Tasks</span>
                         <span id="stat-tasks" class="text-emerald-400 font-mono">-</span>
                     </div>
                     <div class="w-px bg-slate-800 self-stretch"></div>
-                    <div class="flex flex-col">
+                    <div class="flex flex-col text-center">
                         <span class="text-slate-500 uppercase font-black">Latency</span>
                         <span id="stat-latency" class="text-amber-400 font-mono">-</span>
                     </div>
                     <div class="w-px bg-slate-800 self-stretch"></div>
-                    <div class="flex flex-col">
+                    <div class="flex flex-col text-center">
                         <span class="text-slate-500 uppercase font-black">Avg_TPS</span>
                         <span id="stat-tps" class="text-rose-400 font-mono">-</span>
                     </div>
                     <div class="w-px bg-slate-800 self-stretch"></div>
-                    <div class="flex flex-col">
+                    <div class="flex flex-col text-center">
                         <span class="text-slate-500 uppercase font-black">Audit_Node</span>
                         <span id="visitor-node" class="text-indigo-400 font-mono">-</span>
                     </div>
@@ -82,28 +124,25 @@
             <div class="overflow-auto flex-1">
                 <table class="w-full text-left text-[12px] border-collapse relative table-fixed">
                     <thead class="bg-slate-950 text-slate-500 uppercase text-[10px] sticky top-0 z-10 shadow-md">
-                        <tr class="border-b border-slate-800 text-[10px]">
-                            <th class="px-3 py-2 w-[80px] min-w-[80px] font-black">Time</th>
-                            <th class="px-3 py-2 w-[110px] min-w-[110px] font-black">Status</th>
-                            <th class="px-3 py-2 w-[80px] min-w-[80px] font-black">Metrics</th>
-                            <th class="px-3 py-2 w-[120px] min-w-[120px] font-black">Session</th>
-                            <th class="px-3 py-2 w-[140px] min-w-[140px] font-black">Origin</th>
+                        <tr class="border-b border-slate-800">
+                            <th class="px-3 py-2 w-[80px] font-black">Time</th>
+                            <th class="px-3 py-2 w-[100px] font-black">Status</th>
+                            <th class="px-3 py-2 w-[80px] font-black">Metrics</th>
+                            <th class="px-3 py-2 w-[120px] font-black">Session</th>
+                            <th class="px-3 py-2 w-[140px] font-black">Origin</th>
                             <th class="px-3 py-2 w-[20%] font-black">Question</th>
                             <th class="px-3 py-2 font-black">Answer / Tactical Actions</th>
                         </tr>
                     </thead>
-                    <tbody id="log-body" class="divide-y divide-slate-800/50">
-                        <!-- Rows -->
-                    </tbody>
+                    <tbody id="log-body" class="divide-y divide-slate-800/50"></tbody>
                 </table>
             </div>
             
-            <!-- Pagination Footer -->
             <div class="shrink-0 bg-slate-950 border-t border-slate-800 px-4 py-2 flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
                 <div class="flex items-center gap-4">
-                    <button id="btn-prev" onclick="changePage(-1)" class="text-slate-500 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-colors">◀ PREV_PAGE</button>
+                    <button id="btn-prev" onclick="changePage(-1)" class="text-slate-500 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed">◀ PREV_PAGE</button>
                     <div class="text-slate-600">PAGE <span id="current-page-num" class="text-emerald-500">1</span> OF <span id="total-pages-num" class="text-slate-400">1</span></div>
-                    <button id="btn-next" onclick="changePage(1)" class="text-slate-500 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-colors">NEXT_PAGE ▶</button>
+                    <button id="btn-next" onclick="changePage(1)" class="text-slate-500 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed">NEXT_PAGE ▶</button>
                 </div>
                 <div class="text-slate-700">TOTAL_RECORDS: <span id="total-records-count">0</span></div>
             </div>
@@ -116,9 +155,7 @@
             <h2 class="text-sm font-black uppercase text-emerald-500 tracking-widest" id="drawer-title">File_Preview</h2>
             <button onclick="closeDrawer()" class="text-slate-500 hover:text-white transition-colors">✕ CLOSE</button>
         </div>
-        <div id="drawer-content" class="flex-1 overflow-auto p-6 markdown-body text-slate-300 text-sm">
-            <!-- Content -->
-        </div>
+        <div id="drawer-content" class="flex-1 overflow-auto p-6 text-slate-300 text-sm"></div>
     </div>
 
     <!-- Image Modal -->
@@ -188,7 +225,7 @@
             try {
                 const content = decodeURIComponent(escape(atob(base64Content)));
                 drawerTitle.textContent = 'INTERACTION_CONTENT';
-                drawerContent.innerHTML = `<div class="prose prose-invert max-w-none">${marked.parse(content)}</div>`;
+                drawerContent.innerHTML = `<div class="prose prose-invert prose-emerald">${marked.parse(content)}</div>`;
                 drawer.classList.add('open');
             } catch (e) { console.error('MD render failed', e); }
         }
@@ -226,7 +263,7 @@
                             </div>
                         </div>
                     </div>
-                    <div class="text-[9px] text-slate-600 italic px-2">Physical telemetry from M4 Max hardware acceleration.</div>
+                    <div class="text-[9px] text-slate-600 italic px-2">Data captured from local M4 Max telemetry stack.</div>
                 </div>`;
             drawer.classList.add('open');
         }
@@ -237,7 +274,11 @@
             drawerContent.innerHTML = '<div class="text-slate-500 animate-pulse">Loading_Content...</div>';
             drawer.classList.add('open');
             try {
-                const url = `/media/${encodeURIComponent(filename)}?t=${Date.now()}`;
+                const mediaUrl = new URL(`/media/${encodeURIComponent(filename)}`, window.location.origin);
+                mediaUrl.username = ''; mediaUrl.password = '';
+                mediaUrl.searchParams.set('t', Date.now());
+                const url = mediaUrl.href;
+
                 const lowerName = filename.toLowerCase();
                 if (lowerName.endsWith('.pdf')) {
                     drawerContent.innerHTML = `<iframe src="${url}" class="w-full h-full border-0 rounded bg-white" title="${filename}"></iframe>`;
@@ -260,7 +301,7 @@
                     const res = await fetch(url);
                     if (!res.ok) throw new Error(`HTTP_${res.status}`);
                     const text = await res.text();
-                    if (lowerName.endsWith('.md')) drawerContent.innerHTML = marked.parse(text);
+                    if (lowerName.endsWith('.md')) drawerContent.innerHTML = `<div class="prose prose-invert prose-emerald">${marked.parse(text)}</div>`;
                     else drawerContent.innerHTML = `<pre class="whitespace-pre-wrap break-all text-xs font-mono text-slate-300 bg-slate-900/50 p-4 rounded border border-slate-800"><code>${text.replace(/</g, '&lt;')}</code></pre>`;
                 }
             } catch (e) {
@@ -269,7 +310,7 @@
         }
 
         function handleAudioError(el) {
-            document.getElementById('audio-status').innerHTML = `<span class="text-red-500 uppercase">LOAD_ERROR: ${el.error?.message || 'MEDIA_UNSUPPORTED'}</span>`;
+            document.getElementById('audio-status').innerHTML = `<span class="text-red-500 uppercase">LOAD_ERROR: MEDIA_UNSUPPORTED_OR_MISSING</span>`;
         }
 
         function openSessionDrawer(sessionId) {
@@ -301,12 +342,28 @@
         async function retryTask(id) {
             if (!confirm('RETRY_TASK?')) return;
             try {
-                const res = await fetch('/api/retry', {
+                const retryUrl = new URL('/api/retry', window.location.origin);
+                retryUrl.username = ''; retryUrl.password = '';
+                const res = await fetch(retryUrl.href, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id })
                 });
                 if (res.ok) statusIndicator.textContent = 'TASK_REQUEUED';
+            } catch (e) { console.error(e); }
+        }
+
+        async function triggerFix(id) {
+            if (!confirm('TRIGGER_QUICK_FIX?')) return;
+            try {
+                const fixUrl = new URL('/api/fix', window.location.origin);
+                fixUrl.username = ''; fixUrl.password = '';
+                const res = await fetch(fixUrl.href, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id })
+                });
+                if (res.ok) statusIndicator.textContent = 'FIX_INJECTED';
             } catch (e) { console.error(e); }
         }
 
@@ -350,41 +407,30 @@
             </div>`;
         }
 
-        function showImage(url) { modalImg.src = url; imageModal.classList.remove('hidden'); imageModal.classList.add('flex'); }
-        window.showImage = showImage;
-
         function renderResponses(responses, attachments = [], parentId) {
             if (!responses || responses.length === 0) return '<span class="text-slate-700 italic text-[10px]">Thinking...</span>';
-            
             return `<div class="task-flow pt-1 pb-1 w-full space-y-1">${responses.map(r => {
                 let content = r.content;
-                let badge = '';
-                let clickAction = '';
-                
+                let badge = ''; let clickAction = '';
                 if (content.startsWith('[Status]')) {
                     badge = '<span class="text-[8px] bg-slate-800 text-slate-500 px-1 py-0.5 rounded uppercase font-black">Step</span>';
                     content = `<span class="text-slate-500 italic">${content.replace('[Status]', '').trim()}</span>`;
-                } 
-                else if (r.type === 'File') {
+                } else if (r.type === 'File') {
                     const fileName = content.split('/').pop();
-                    badge = `<span class="text-[8px] bg-blue-950 text-blue-400 px-1 py-0.5 rounded uppercase font-black cursor-pointer hover:bg-blue-900" onclick="openFileInDrawer('${fileName}')">FILE</span>`;
+                    badge = `<span class="text-[8px] bg-blue-950 text-blue-400 px-1 py-0.5 rounded uppercase font-black cursor-pointer" onclick="openFileInDrawer('${fileName}')">FILE</span>`;
                     content = `<span class="text-blue-400 underline decoration-blue-800/50 cursor-pointer text-[10px]" onclick="openFileInDrawer('${fileName}')">${fileName}</span>`;
-                } 
-                else if (r.type === 'Image') {
+                } else if (r.type === 'Image') {
                     const fileName = content.split('/').pop();
-                    badge = `<span class="text-[8px] bg-purple-950 text-purple-400 px-1 py-0.5 rounded uppercase font-black cursor-pointer hover:bg-purple-900" onclick="openFileInDrawer('${fileName}')">VISUAL</span>`;
-                    content = `<span class="text-purple-400 cursor-pointer text-[10px] hover:text-purple-300 transition-colors" onclick="openFileInDrawer('${fileName}')">Generated: ${fileName}</span>`;
-                } 
-                else if (r.type === 'Audio') {
+                    badge = `<span class="text-[8px] bg-purple-950 text-purple-400 px-1 py-0.5 rounded uppercase font-black cursor-pointer" onclick="openFileInDrawer('${fileName}')">VISUAL</span>`;
+                    content = `<span class="text-purple-400 cursor-pointer text-[10px]" onclick="openFileInDrawer('${fileName}')">Generated: ${fileName}</span>`;
+                } else if (r.type === 'Audio') {
                     const fileName = content.split('/').pop();
-                    badge = `<span class="text-[8px] bg-rose-950 text-rose-400 px-1 py-0.5 rounded uppercase font-black cursor-pointer hover:bg-rose-900" onclick="openFileInDrawer('${encodeURIComponent(fileName)}')">VOICE</span>`;
-                    content = `<span class="text-rose-400 cursor-pointer text-[10px] hover:text-rose-300 transition-colors" onclick="openFileInDrawer('${encodeURIComponent(fileName)}')">Audio Output</span>`;
+                    badge = `<span class="text-[8px] bg-rose-950 text-rose-400 px-1 py-0.5 rounded uppercase font-black cursor-pointer" onclick="openFileInDrawer('${encodeURIComponent(fileName)}')">VOICE</span>`;
+                    content = `<span class="text-rose-400 cursor-pointer text-[10px]" onclick="openFileInDrawer('${encodeURIComponent(fileName)}')">Audio Output</span>`;
                 } else {
-                    // Standard text response -> make clickable for full MD view
                     const encodedContent = btoa(unescape(encodeURIComponent(content)));
                     clickAction = `onclick="openMarkdownInDrawer('${encodedContent}')"`;
                 }
-
                 return `<div class="task-node text-slate-400 flex items-start gap-2 leading-tight group/node">
                     <div class="shrink-0 mt-0.5">${badge || '<div class="w-1.5 h-1.5 mt-1 rounded-full bg-slate-700"></div>'}</div>
                     <div class="break-words w-full text-[11px] line-clamp-compact hover:line-clamp-none transition-all cursor-pointer" ${clickAction}>${content}</div>
@@ -395,17 +441,8 @@
         function renderSession(sessionId) {
             let hash = 0; for (let i = 0; i < sessionId.length; i++) hash = sessionId.charCodeAt(i) + ((hash << 5) - hash);
             const colors = ['text-sky-400', 'text-rose-400', 'text-violet-400', 'text-cyan-400', 'text-emerald-400'];
-            
-            // Icon Identity
-            let icon = sessionId.includes('@') ? '📱' : '#';
-            if (sessionId.startsWith('lark')) icon = '🐦'; // Lark/Feishu icon
-            
-            // Middle Truncation
-            let display = sessionId;
-            if (sessionId.length > 12) {
-                display = `${sessionId.slice(0, 4)}...${sessionId.slice(-4)}`;
-            }
-
+            let icon = sessionId.includes('@') ? '📱' : (sessionId.startsWith('lark') ? '🐦' : '#');
+            let display = sessionId.length > 12 ? `${sessionId.slice(0, 4)}...${sessionId.slice(-4)}` : sessionId;
             return `<div class="flex items-center gap-1.5 cursor-pointer group" onclick="openSessionDrawer('${sessionId}')" title="${sessionId}">
                 <span class="text-slate-600 text-[10px] opacity-70">${icon}</span>
                 <span class="${colors[Math.abs(hash) % colors.length]} font-bold text-[11px] tracking-tight group-hover:underline decoration-dashed underline-offset-4">${display}</span>
@@ -427,81 +464,16 @@
             return !responses || !responses.some(r => ACTION_TYPES.includes(r.type));
         }
 
-        async function triggerFix(id) {
-            if (!confirm('TRIGGER_QUICK_FIX?')) return;
-            try {
-                const res = await fetch('/api/fix', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id })
-                });
-                if (res.ok) statusIndicator.textContent = 'FIX_INJECTED';
-            } catch (e) { console.error(e); }
-        }
-
-        function openMarkdownInDrawer(base64Content) {
-            const content = decodeURIComponent(escape(atob(base64Content)));
-            drawerTitle.textContent = 'INTERACTION_CONTENT';
-            drawerContent.innerHTML = `<div class="prose prose-invert max-w-none">${marked.parse(content)}</div>`;
-            drawer.classList.add('open');
-        }
-
-        function openPerformanceWaterfall(base64Telemetry, totalMs) {
-            const tel = JSON.parse(atob(base64Telemetry));
-            drawerTitle.textContent = 'PERFORMANCE_WATERFALL';
-            
-            const getPct = (v) => ((v / totalMs) * 100).toFixed(1) + '%';
-            
-            drawerContent.innerHTML = `
-                <div class="space-y-8">
-                    <div class="bg-slate-900/50 p-6 rounded-xl border border-slate-800">
-                        <div class="flex justify-between mb-4 text-[10px] font-black uppercase tracking-widest">
-                            <span class="text-slate-500">Timeline_Breakdown</span>
-                            <span class="text-emerald-500">${(totalMs/1000).toFixed(2)}s Total</span>
-                        </div>
-                        <div class="flex w-full h-8 bg-slate-950 rounded-full overflow-hidden border border-slate-800 p-1 gap-1">
-                            <div class="perf-pre perf-node h-full" style="width: ${getPct(tel.pre)}" title="Pre-processing"></div>
-                            <div class="perf-llm perf-node h-full" style="width: ${getPct(tel.llm)}" title="LLM Inference"></div>
-                            <div class="perf-post perf-node h-full" style="width: ${getPct(tel.post)}" title="Tool Execution"></div>
-                        </div>
-                        <div class="grid grid-cols-3 mt-6 gap-4 text-[10px]">
-                            <div class="flex flex-col gap-1">
-                                <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full perf-pre"></div><span class="text-slate-400">PRE_PROC</span></div>
-                                <div class="font-bold text-white pl-4">${(tel.pre/1000).toFixed(2)}s</div>
-                            </div>
-                            <div class="flex flex-col gap-1">
-                                <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full perf-llm"></div><span class="text-slate-400">LLM_INF</span></div>
-                                <div class="font-bold text-white pl-4">${(tel.llm/1000).toFixed(2)}s</div>
-                            </div>
-                            <div class="flex flex-col gap-1">
-                                <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full perf-post"></div><span class="text-slate-400">POST_PROC</span></div>
-                                <div class="font-bold text-white pl-4">${(tel.post/1000).toFixed(2)}s</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="text-[9px] text-slate-600 italic px-2">Data captured from local M4 Max telemetry stack.</div>
-                </div>
-            `;
-            drawer.classList.add('open');
-        }
-
         function renderCurrentData() {
             const { log, stats } = lastData;
             const query = searchBox.value.toLowerCase();
-            
-            // Heatmap Rendering (Top Dashboard)
             const heatmap = document.getElementById('heatmap-container');
             if (stats && stats.categories && heatmap) {
                 heatmap.innerHTML = Object.entries(stats.categories).map(([cat, count]) => {
                     const cls = `tag-${cat.toLowerCase()}`;
-                    return `<div class="tooltip-container group">
-                        <div class="w-2.5 h-2.5 rounded-full ${cls} border border-white/10 hover:scale-125 transition-transform shadow-lg" 
-                             style="opacity: ${Math.min(0.4 + (count/10)*0.6, 1)}"></div>
-                        <span class="tooltip-text">${cat}: ${count} interactions</span>
-                    </div>`;
+                    return `<div class="tooltip-container group"><div class="w-2.5 h-2.5 rounded-full ${cls} border border-white/10 hover:scale-125 transition-transform shadow-lg" style="opacity: ${Math.min(0.4 + (count/10)*0.6, 1)}"></div><span class="tooltip-text">${cat}: ${count} tasks</span></div>`;
                 }).join('');
             }
-
             logBody.innerHTML = log.filter(t => {
                 const textMatch = t.content.toLowerCase().includes(query) || t.responses.some(r => r.content.toLowerCase().includes(query));
                 if (!textMatch) return false;
@@ -513,19 +485,12 @@
                 const hasWarning = t.status === 'RESOLVED' && checkIntentWarning(t.content, t.responses);
                 const isNew = !seenIds.has(t.id); if (isNew) seenIds.add(t.id);
                 const intentTag = `<span class="intent-tag tag-${(t.intent_category || 'GENERAL').toLowerCase()} mt-1 block w-fit">${t.intent_category || 'GEN'}</span>`;
-                
                 return `<tr class="hover:bg-slate-800/40 transition-colors group ${isNew ? 'new-task' : ''} ${hasWarning ? 'intent-mismatch' : ''} status-${t.status.toLowerCase()}">
                     <td class="px-3 py-3 align-top text-slate-600 font-bold text-[10px]">${formatTime(t.created_at)}</td>
                     <td class="px-3 py-3 align-top">${getStatusBadge(t.status, hasWarning, t.id)}</td>
                     <td class="px-3 py-3 align-top">${getDurationBadge(t.duration_ms, t.token_usage, hasWarning, t.telemetry)}</td>
                     <td class="px-3 py-3 align-top">${renderSession(t.session_id)}</td>
-                    <td class="px-3 py-3 align-top">
-                        <div class="flex flex-col">
-                            <span class="text-slate-400 font-mono text-[10px]">${t.origin_ip || 'NODE_LOCAL'}</span>
-                            <span class="text-[9px] text-indigo-500/70 font-black uppercase tracking-tighter">${geoCache.get(t.origin_ip) || 'RESOLVING...'}</span>
-                            ${intentTag}
-                        </div>
-                    </td>
+                    <td class="px-3 py-3 align-top"><div class="flex flex-col"><span class="text-slate-400 font-mono text-[10px]">${t.origin_ip || 'NODE_LOCAL'}</span><span class="text-[9px] text-indigo-500/70 font-black uppercase tracking-tighter">${geoCache.get(t.origin_ip) || 'RESOLVING...'}</span>${intentTag}</div></td>
                     <td class="px-3 py-3 align-top text-slate-300 w-[20%]"><div class="line-clamp-3 text-[11px]">${renderQuestion(t.content, t.attachments)}</div></td>
                     <td class="px-3 py-3 align-top w-[60%]">${renderResponses(t.responses, t.attachments, t.id)}</td></tr>`;
             }).join('');
@@ -537,24 +502,15 @@
                 cleanUrl.username = ''; cleanUrl.password = ''; 
                 cleanUrl.searchParams.set('page', currentPage);
                 cleanUrl.searchParams.set('limit', 20);
-                
                 const res = await fetch(cleanUrl.href);
-                if (res.status === 401) {
-                    statusIndicator.innerHTML = '<span class="text-red-500 animate-pulse cursor-pointer" onclick="window.location.reload()">AUTH_REQUIRED: CLICK_TO_LOGIN</span>';
-                    return;
-                }
+                if (res.status === 401) { statusIndicator.innerHTML = '<span class="text-red-500 animate-pulse cursor-pointer" onclick="window.location.reload()">AUTH_REQUIRED: CLICK_TO_LOGIN</span>'; return; }
                 if (!res.ok) throw new Error(`HTTP_${res.status}`);
-
                 lastData = await res.json();
                 const { stats, log, total } = lastData;
-                
-                // Update Header Stats
                 if (stats) {
                     document.getElementById('daily-stats').classList.remove('hidden');
                     document.getElementById('stat-tasks').textContent = stats.total_tasks;
                     document.getElementById('stat-latency').textContent = (stats.avg_duration / 1000).toFixed(1) + 's';
-                    
-                    // Global TPS Calculation across current view
                     const resolvedWithTokens = log.filter(t => t.status === 'RESOLVED' && t.token_usage && t.duration_ms > 0);
                     if (resolvedWithTokens.length > 0) {
                         const totalTokens = resolvedWithTokens.reduce((sum, t) => sum + t.token_usage.completion, 0);
@@ -562,30 +518,23 @@
                         const avgTps = (totalTokens / (totalMs / 1000)).toFixed(1);
                         document.getElementById('stat-tps').textContent = `${avgTps} TPS`;
                     }
-                    
                     if (stats.visitor_ip) {
                         const geo = await getGeo(stats.visitor_ip);
                         document.getElementById('visitor-node').textContent = `${stats.visitor_ip} (${geo})`;
                     }
                 }
-
-                // Update Pagination
                 const totalPages = Math.ceil(total / 20) || 1;
                 document.getElementById('current-page-num').textContent = currentPage;
                 document.getElementById('total-pages-num').textContent = totalPages;
                 document.getElementById('total-records-count').textContent = total;
                 document.getElementById('btn-prev').disabled = currentPage <= 1;
                 document.getElementById('btn-next').disabled = currentPage >= totalPages;
-
                 statusIndicator.textContent = `FEED_SYNCED: ${new Date().toLocaleTimeString()}`;
                 statusIndicator.classList.remove('text-red-500', 'animate-pulse');
                 renderCurrentData();
-            } catch (e) { 
-                console.error(e);
-                statusIndicator.innerHTML = `<span class="text-red-500">LINK_OFFLINE: ${e.message}</span>`;
-            }
+            } catch (e) { statusIndicator.innerHTML = `<span class="text-red-500">LINK_OFFLINE: ${e.message}</span>`; }
         }
-        setInterval(fetchLog, 2000); fetchLog();
+        setInterval(fetchLog, 3000); fetchLog();
     </script>
 </body>
 </html>
