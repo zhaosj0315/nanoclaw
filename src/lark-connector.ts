@@ -32,9 +32,10 @@ export class LarkConnector {
         logger.info({ rawMessage: message }, '--- LARK RAW PAYLOAD ---');
 
         const messageId = message.message_id;
-        const msgType = (message as any).msg_type;
+        // 关键修复：飞书字段名为 message_type 而非 msg_type
+        const msgType = (message as any).message_type;
         
-        // 极致归一化：仅保留字母、数字和下划线，彻底杜绝任何形式的空格或特殊字符
+        // 极致归一化：仅保留字母、数字和下划线
         const chatId = message.chat_id.replace(/[^\w]/g, '');
         let content = '';
         let attachments: string[] = [];
@@ -45,8 +46,6 @@ export class LarkConnector {
           
           if (msgType === 'text') {
             content = parsedContent.text || '';
-            // 飞书文本二次清洗：移除可能存在的转义反斜杠
-            content = content.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
           } else if (msgType === 'image') {
             content = '[IMAGE]';
             await this.downloadResource(messageId, parsedContent.image_key, 'image', `image_${messageId}.jpg`);
@@ -62,25 +61,19 @@ export class LarkConnector {
             await this.downloadResource(messageId, parsedContent.file_key, 'file', `doc_${messageId}_${fileName}`);
           }
           
-          // 如果解析后还是空的，尝试暴力匹配文本内容
+          // 备选解析逻辑
           if (!content && msgType === 'text' && rawContent.includes('"text":"')) {
             const match = rawContent.match(/"text":"(.*?)"/);
             if (match) content = match[1];
           }
-
-          // 核弹级兜底：如果所有解析都失败，直接把原始 content 塞进去
-          // 宁可让 AI 看到一段 JSON，也不能让消息丢了
-          if (!content && msgType === 'text') {
-             content = `[RAW_LARK] ${rawContent}`;
-          }
         } catch (e) {
-          logger.error({ e, messageId }, 'Lark content parsing failed, using fallback');
+          logger.error({ e, messageId }, 'Lark content parsing failed');
           content = message.content;
         }
 
         const msg: NewMessage = {
           id: messageId,
-          chat_jid: "lark@" + chatId, // 显式拼接，严禁空格
+          chat_jid: "lark@" + chatId, 
           sender: (sender.sender_id?.open_id || 'unknown').replace(/[^\w]/g, ''),
           sender_name: 'Lark User',
           content: content,
