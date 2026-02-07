@@ -273,6 +273,19 @@
         const INTENT_KEYWORDS = ["发", "画", "生成", "文件", "图", "语音", "播报", "send", "generate", "image", "voice"];
         const ACTION_TYPES = ["File", "Image", "Audio"];
 
+        const geoCache = new Map();
+        async function getGeo(ip) {
+            if (!ip || ip === '127.0.0.1' || ip.includes('::')) return 'LOCAL';
+            if (geoCache.has(ip)) return geoCache.get(ip);
+            try {
+                const res = await fetch(`http://ip-api.com/json/${ip}?fields=city,regionName`);
+                const data = await res.json();
+                const loc = data.city ? `${data.city}, ${data.regionName}` : 'UNKNOWN';
+                geoCache.set(ip, loc);
+                return loc;
+            } catch (e) { return 'ERROR'; }
+        }
+
         let activeFilters = { media: false, slow: false, failed: false };
         let seenIds = new Set();
         let lastData = { log: [], stats: null };
