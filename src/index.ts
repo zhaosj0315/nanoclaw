@@ -288,13 +288,17 @@ function getAvailableGroups(): AvailableGroup[] {
 import { analyzeMedia } from './media-analyzer.js';
 
 async function processMessage(msg: NewMessage): Promise<void> {
-  const group = registeredGroups[msg.chat_jid];
-  if (!group) return;
+  const chatJid = msg.chat_jid.trim();
+  const group = registeredGroups[chatJid];
+  
+  if (!group) {
+    logger.warn({ chatJid, registeredJids: Object.keys(registeredGroups) }, 'Message ignored: Chat JID not in registered groups');
+    return;
+  }
 
   const mediaDir = path.join(DATA_DIR, 'media');
 
   // 关键修复：允许处理 from_me 消息（支持私聊），但严格排除助手发出的内容
-  // 排除：以 🐾 或 📦 开头的消息（包括新的多媒体占位符）或以助手名开头的文本
   if (msg.from_me && (msg.content.startsWith('🐾') || msg.content.startsWith('📦') || msg.content.startsWith(`${ASSISTANT_NAME}:`))) {
     return;
   }
@@ -302,7 +306,6 @@ async function processMessage(msg: NewMessage): Promise<void> {
   const content = msg.content.trim();
 
   // --- 关键修复：空消息过滤 ---
-  // 动态检查该消息是否有任何附件（兼容 WA 和 Lark 的各种前缀/后缀）
   let hasAttachments = false;
   if (fs.existsSync(mediaDir)) {
     hasAttachments = fs.readdirSync(mediaDir).some(f => f.includes(`_${msg.id}.`));
@@ -314,73 +317,64 @@ async function processMessage(msg: NewMessage): Promise<void> {
   }
 
   logger.info(
-    { group: group.name, user: msg.sender_name, content },
-    'New message received',
+    { group: group.name, user: msg.sender_name, content, chatJid },
+    'Processing message in unified pipeline',
   );
 
   const isMainGroup = group.folder.toLowerCase() === MAIN_GROUP_FOLDER.toLowerCase();
-  const isPrivateChat = msg.chat_jid.endsWith('@s.whatsapp.net') || msg.chat_jid.startsWith('lark@');
+  const isPrivateChat = chatJid.endsWith('@s.whatsapp.net') || chatJid.startsWith('lark@');
 
   // --- 交互式菜单状态拦截 ---
-  const activeMenu = chatMenuState[msg.chat_jid];
+  const activeMenu = chatMenuState[chatJid];
   if (activeMenu) {
-    // 5分钟超时清除
+    // ... (menu logic remains same)
     if (Date.now() - activeMenu.timestamp > 5 * 60 * 1000) {
-      delete chatMenuState[msg.chat_jid];
+      delete chatMenuState[chatJid];
     } else {
       const selection = parseInt(content);
-      // 1. 检查是否为取消指令
       if (['cancel', '取消', '退出', 'stop', '🛑'].includes(content.toLowerCase())) {
-        delete chatMenuState[msg.chat_jid];
-        await sendMessage(msg.chat_jid, '✅ 菜单已取消，请重新输入指令。');
+        delete chatMenuState[chatJid];
+        await sendMessage(chatJid, '✅ 菜单已取消，请重新输入指令。');
         return;
       }
-      
-      // 2. 检查是否为有效选项 (1-N)
       if (!isNaN(selection) && selection >= 1 && selection <= activeMenu.options.length) {
         const selectedOption = activeMenu.options[selection - 1];
-        logger.info({ selection, option: selectedOption }, 'User selected menu option');
-        
-        // 关键：构造系统指令，强制执行并立即结束
         msg.content = `[SYSTEM_INJECTION] 用户已选择: "${selectedOption}"。请立即执行此操作。注意：只允许调用工具（如发文件），严禁输出任何废话或汇报文本。`;
-        
-        // 标记为“菜单执行模式”，后续将拦截所有非工具的文本输出
         msg.isMenuExecution = true;
-        
-        // 消费掉菜单状态
-        delete chatMenuState[msg.chat_jid];
+        delete chatMenuState[chatJid];
       } else {
-        // 3. 无效输入或重复触发 -> 忽略 (防抖动)
-        // 处于菜单等待状态时，屏蔽除选项和取消以外的所有输入，防止幽灵消息触发重复菜单
-        if (content) {
-            logger.warn({ content }, 'Menu active, ignoring non-selection input');
-        }
+        if (content) logger.warn({ content }, 'Menu active, ignoring non-selection input');
         return;
       }
     }
   }
 
   // Skip trigger requirement if it's the main group, a private chat, or the trigger is present
-  if (!isMainGroup && !isPrivateChat && !TRIGGER_PATTERN.test(content)) return;
+  const hasTrigger = TRIGGER_PATTERN.test(content);
+  if (!isMainGroup && !isPrivateChat && !hasTrigger) {
+    logger.debug({ chatJid, isPrivateChat, hasTrigger }, 'Message skipped: missing trigger');
+    return;
+  }
 
   // --- [UX 升级] 表情回应机制：已阅 ---
   const msgKey = {
-    remoteJid: msg.chat_jid,
+    remoteJid: chatJid,
     fromMe: msg.from_me,
     id: msg.id,
     participant: msg.sender
   };
 
-  if (!msg.chat_jid.startsWith('lark@')) {
-    await sendReaction(msg.chat_jid, msgKey, '👀');
+  if (!chatJid.startsWith('lark@')) {
+    await sendReaction(chatJid, msgKey, '👀');
   }
 
-  // 关键修复：时效性检查
-  // 如果消息时间早于当前时间 2 分钟以上（且不是重启瞬间的新消息），则视为过期历史，不再自动回复。
+  // 关键修复：时效性检查 (增加 30s 宽限期防止重启瞬间丢包)
   const msgTimestamp = new Date(msg.timestamp).getTime();
   const now = Date.now();
-  if (now - msgTimestamp > 2 * 60 * 1000) {
-    logger.info({ msgId: msg.id, diff: now - msgTimestamp }, 'Skipping expired message (older than 2 mins)');
+  const GRACE_PERIOD = 30 * 1000;
+  
+  if (now - msgTimestamp > (2 * 60 * 1000) + GRACE_PERIOD) {
+    logger.info({ msgId: msg.id, diff: now - msgTimestamp }, 'Skipping expired message');
     return;
   }
 
