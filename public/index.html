@@ -279,12 +279,25 @@
             
             try {
                 const url = `/media/${filename}`;
-                if (filename.toLowerCase().endsWith('.pdf')) {
+                const lowerName = filename.toLowerCase();
+                
+                if (lowerName.endsWith('.pdf')) {
                     drawerContent.innerHTML = `<iframe src="${url}" class="w-full h-full border-0 rounded" title="${filename}"></iframe>`;
+                } else if (lowerName.match(/\.(png|jpg|jpeg|gif|webp)$/)) {
+                    drawerContent.innerHTML = `<div class="flex flex-col items-center gap-4">
+                        <img src="${url}" class="max-w-full rounded shadow-lg border border-slate-800">
+                        <div class="text-[10px] text-slate-500 font-mono">${filename}</div>
+                    </div>`;
+                } else if (lowerName.match(/\.(ogg|mp3|wav)$/)) {
+                    drawerContent.innerHTML = `<div class="flex flex-col items-center justify-center h-64 gap-6 bg-slate-900/30 rounded-xl border border-slate-800">
+                        <div class="text-4xl">🔊</div>
+                        <audio controls autoplay src="${url}" class="w-64"></audio>
+                        <div class="text-[10px] text-slate-500 font-mono">${filename}</div>
+                    </div>`;
                 } else {
                     const res = await fetch(url);
                     const text = await res.text();
-                    if (filename.toLowerCase().endsWith('.md')) {
+                    if (lowerName.endsWith('.md')) {
                         drawerContent.innerHTML = marked.parse(text);
                     } else {
                         drawerContent.innerHTML = `<pre class="whitespace-pre-wrap break-all text-xs font-mono text-slate-300 bg-slate-900/50 p-4 rounded border border-slate-800"><code>${text.replace(/</g, '&lt;')}</code></pre>`;
@@ -366,13 +379,13 @@
                     content = `<span class="text-blue-400 underline decoration-blue-800/50 cursor-pointer" onclick="openFileInDrawer('${fileName}')">${fileName}</span>`;
                 } else if (r.type === 'Image') {
                     const fileName = content.split('/').pop();
-                    badge = '<span class="text-[8px] bg-purple-950 text-purple-400 px-1 py-0.5 rounded uppercase font-black">Visual</span>';
-                    content = `<div class="inline-flex items-center gap-2 group cursor-pointer mt-1" onclick="showImage('/media/${fileName}')">
+                    badge = `<span class="text-[8px] bg-purple-950 text-purple-400 px-1 py-0.5 rounded uppercase font-black cursor-pointer" onclick="openFileInDrawer('${fileName}')">Visual</span>`;
+                    content = `<div class="inline-flex items-center gap-2 group cursor-pointer mt-1" onclick="openFileInDrawer('${fileName}')">
                         <img src="/media/${fileName}" class="w-8 h-8 rounded border border-purple-500/30 object-cover opacity-80 group-hover:opacity-100 transition-opacity">
                         <span class="text-purple-400 text-[10px]">${fileName}</span>
                     </div>`;
                 } else if (r.type === 'Audio') {
-                    badge = '<span class="text-[8px] bg-rose-950 text-rose-400 px-1 py-0.5 rounded uppercase font-black">Voice</span>';
+                    badge = `<span class="text-[8px] bg-rose-950 text-rose-400 px-1 py-0.5 rounded uppercase font-black cursor-pointer" onclick="openFileInDrawer('${content}')">Voice</span>`;
                     content = `<audio controls src="/media/${encodeURIComponent(content)}" class="h-5 w-full opacity-60 hover:opacity-100 scale-90 origin-left"></audio>`;
                 }
                 return `<div class="task-node text-slate-400 flex flex-col items-start leading-tight">
