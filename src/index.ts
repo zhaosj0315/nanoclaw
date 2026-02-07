@@ -390,9 +390,11 @@ async function processMessage(msg: NewMessage): Promise<void> {
   const activeMediaFiles: string[] = []; // 存储将要发给 Gemini 的文件路径
 
   const enhancedHistory = await Promise.all(recentMessages.map(async (m) => {
-    const isBot = m.from_me || m.content.startsWith(`${ASSISTANT_NAME}:`);
-    const sender = isBot ? 'ASSISTANT' : `USER(${m.sender_name})`;
-    let cleanContent = isBot
+    // 判定是否为助手发出的消息：包含爪印或助手名开头
+    const isBotResponse = m.from_me && (m.content.startsWith('🐾') || m.content.startsWith(`${ASSISTANT_NAME}:`));
+    
+    const sender = isBotResponse ? 'ASSISTANT' : `USER(${m.sender_name})`;
+    let cleanContent = isBotResponse
       ? m.content.replace(`${ASSISTANT_NAME}:`, '').trim()
       : m.content;
 
@@ -404,35 +406,32 @@ async function processMessage(msg: NewMessage): Promise<void> {
     
     // 语音处理
     if (fs.existsSync(voicePath)) {
-      if (!isBot) {
+      if (!isBotResponse) {
         hasUserAudio = true;
         activeMediaFiles.push(voicePath);
       }
       
       let analysis;
       if (fs.existsSync(analysisCachePath)) {
-        // 读取缓存，避免重复分析
         analysis = loadJson<any>(analysisCachePath, null);
       } else {
-            // 关键优化：仅对当前那条触发消息进行实时分析
-            if (m.id === msg.id) {
-              if (fs.existsSync(voicePath)) activeMediaFiles.push(voicePath);
-              if (fs.existsSync(imagePath)) activeMediaFiles.push(imagePath);
-              
-              analysis = await analyzeMedia(fs.existsSync(voicePath) ? voicePath : imagePath);
-              if (analysis) saveJson(analysisCachePath, analysis);
-            }
-          }
-        
-          if (analysis) {        cleanContent += `\n[系统多模态分析: ${analysis.description}]`;
-      } else if (!isBot) {
+        // 关键优化：仅对当前那条触发消息进行实时分析
+        if (m.id === msg.id) {
+          analysis = await analyzeMedia(voicePath);
+          if (analysis) saveJson(analysisCachePath, analysis);
+        }
+      }
+
+      if (analysis) {
+        cleanContent += `\n[系统多模态分析: ${analysis.description}]`;
+      } else if (!isBotResponse) {
         cleanContent += `\n[历史语音消息 (未分析)]`;
       }
     }
 
     // 图片处理
     if (fs.existsSync(imagePath)) {
-      if (!isBot) activeMediaFiles.push(imagePath);
+      if (!isBotResponse) activeMediaFiles.push(imagePath);
 
       let analysis;
       if (fs.existsSync(analysisCachePath)) {
@@ -447,7 +446,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
 
       if (analysis) {
         cleanContent += `\n[系统视觉扫描: ${analysis.description}]`;
-      } else if (!isBot) {
+      } else if (!isBotResponse) {
         cleanContent += `\n[历史图片 (未分析)]`;
       }
     }
