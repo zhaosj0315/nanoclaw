@@ -33,6 +33,7 @@ export interface InteractionTask {
   content: string;
   status: 'PENDING' | 'RESOLVED';
   created_at: string;
+  duration_ms?: number;
 }
 
 export interface InteractionResponse {
@@ -97,7 +98,8 @@ export function initDatabase() {
       session_id TEXT,
       content TEXT,
       status TEXT,
-      created_at DATETIME
+      created_at DATETIME,
+      duration_ms INTEGER
     );
     CREATE TABLE IF NOT EXISTS interaction_responses (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -292,18 +294,26 @@ export function getLastGroupSync(): string | undefined {
 
 export function createInteractionTask(id: string, session_id: string, content: string) {
   db.prepare(`
-    INSERT INTO interaction_tasks (id, session_id, content, status, created_at)
-    VALUES (?, ?, ?, 'PENDING', ?)
+    INSERT INTO interaction_tasks (id, session_id, content, status, created_at, duration_ms)
+    VALUES (?, ?, ?, 'PENDING', ?, NULL)
     ON CONFLICT(id) DO NOTHING
   `).run(id, session_id, content, new Date().toISOString());
 }
 
 export function completeInteractionTask(id: string) {
+  const now = new Date();
+  const task = db.prepare('SELECT created_at FROM interaction_tasks WHERE id = ?').get(id) as { created_at: string };
+  
+  let duration = 0;
+  if (task) {
+    duration = now.getTime() - new Date(task.created_at).getTime();
+  }
+
   db.prepare(`
     UPDATE interaction_tasks 
-    SET status = 'RESOLVED'
+    SET status = 'RESOLVED', duration_ms = ?
     WHERE id = ?
-  `).run(id);
+  `).run(duration, id);
 }
 
 export function addInteractionResponse(parent_id: string, type: string, content: string) {
