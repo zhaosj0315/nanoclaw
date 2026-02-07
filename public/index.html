@@ -198,7 +198,7 @@
         function toggleFilter(type) {
             activeFilters[type] = !activeFilters[type];
             document.getElementById(`filter-${type}`).classList.toggle('active', activeFilters[type]);
-            renderCurrentData(); // Re-render with existing data if possible, or wait for next fetch
+            renderCurrentData(); 
         }
 
         let lastData = { log: [], stats: null };
@@ -305,18 +305,25 @@
                     </div>`;
                 } else if (r.type === 'Audio') {
                     badge = '<span class="text-[9px] bg-rose-950 text-rose-400 px-1 py-0.5 rounded border border-rose-900/50 uppercase font-black tracking-tighter">Voice</span>';
-                    // Only treat as file if it looks like one (has extension) and isn't too long
                     if (content.match(/\.(ogg|mp3|wav)$/i) && content.length < 256) {
                         const url = `/media/${encodeURIComponent(content)}`;
                         content = `<div class="mt-1 w-full max-w-[240px] flex items-center gap-2">
                             <audio controls src="${url}" class="h-6 w-full opacity-60 hover:opacity-100 transition-opacity scale-90 origin-left"></audio>
                         </div>`;
                     } else {
-                        // Fallback for text-only TTS logs or missing files
                         content = `<span class="text-rose-300/80 italic">"${content}"</span>`;
                     }
                 } else {
                     nodeClass = 'text-slate-300';
+                    // Link internal file references in text responses
+                    content = content.replace(/(image_\w+\.jpg|voice_\w+\.ogg|[\w-]+\.(?:pdf|md|png|jpg|xlsx))/gi, (match) => {
+                        const ext = match.split('.').pop().toLowerCase();
+                        const url = `/media/${match}`;
+                        if (['jpg', 'png', 'jpeg'].includes(ext)) {
+                            return `<span class="text-purple-400 underline cursor-pointer" onclick="showImage('${url}')">${match}</span>`;
+                        }
+                        return `<a href="${url}" target="_blank" class="text-blue-400 underline">${match}</a>`;
+                    });
                 }
 
                 return `<div class="task-node ${nodeClass} flex flex-col items-start leading-tight">
@@ -347,10 +354,22 @@
             alert("Session history for " + sessionId + " coming soon.");
         }
 
-        function checkIntentWarning(question, responses) {
-            const lowerQ = question.toLowerCase();
-            if (!INTENT_KEYWORDS.some(kw => lowerQ.includes(kw))) return false;
-            return !responses || !responses.some(r => ACTION_TYPES.includes(r.type));
+        function renderQuestion(content) {
+            if (!content) return '';
+            let safeContent = content.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            safeContent = safeContent.replace(/\[IMAGE: (.*?)\]/g, (match, filename) => {
+                const url = `/media/${filename}`;
+                return `<div class="inline-flex items-center gap-1.5 ml-1 align-middle group cursor-pointer" onclick="showImage('${url}')">
+                    <span class="text-[9px] bg-purple-950 text-purple-400 px-1 rounded border border-purple-900/50 uppercase font-black">IMG</span>
+                    <div class="relative w-4 h-4 rounded overflow-hidden bg-black/40 border border-purple-500/30">
+                        <img src="${url}" class="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity">
+                    </div>
+                </div>`;
+            });
+            safeContent = safeContent.replace(/\[AUDIO: (.*?)\]/g, (match, filename) => {
+                return `<span class="text-[9px] bg-rose-950 text-rose-400 px-1 rounded border border-rose-900/50 uppercase font-black align-middle ml-1">VOICE</span>`;
+            });
+            return safeContent;
         }
 
         function renderCurrentData() {
@@ -366,7 +385,6 @@
                 const hasMedia = task.responses.some(r => ACTION_TYPES.includes(r.type));
                 const isSlow = task.duration_ms > 15000;
                 const isFailed = task.status === 'RESOLVED' && checkIntentWarning(task.content, task.responses);
-
                 if (activeFilters.media && !hasMedia) return false;
                 if (activeFilters.slow && !isSlow) return false;
                 if (activeFilters.failed && !isFailed) return false;
@@ -392,8 +410,8 @@
                     <td class="px-3 py-2 align-middle">
                         ${renderSession(task.session_id)}
                     </td>
-                    <td class="px-3 py-2 align-top text-slate-200 leading-snug whitespace-normal break-words pt-3">
-                        ${task.content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}
+                    <td class="px-3 py-2 align-middle text-slate-200 leading-snug whitespace-normal break-words pt-3">
+                        ${renderQuestion(task.content)}
                     </td>
                     <td class="px-3 py-2 align-top whitespace-normal pt-2.5">
                         ${renderResponses(task.responses)}
@@ -402,15 +420,19 @@
             `}).join('');
         }
 
+        function checkIntentWarning(question, responses) {
+            const lowerQ = question.toLowerCase();
+            if (!INTENT_KEYWORDS.some(kw => lowerQ.includes(kw))) return false;
+            return !responses || !responses.some(r => ACTION_TYPES.includes(r.type));
+        }
+
         async function fetchLog() {
             try {
                 const res = await fetch('/api/log');
                 if (res.status === 401) { window.location.reload(); return; }
                 lastData = await res.json();
-                
                 statusIndicator.textContent = `Live_Feed: ${new Date().toLocaleTimeString()}`;
                 statusIndicator.classList.remove('text-red-500');
-                
                 renderCurrentData();
             } catch (err) {
                 statusIndicator.textContent = 'Link_Broken';

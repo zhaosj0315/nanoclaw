@@ -425,6 +425,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
     
     // 语音处理
     if (fs.existsSync(voicePath)) {
+      const fileName = `voice_${m.id}.ogg`;
       if (!isBotResponse) {
         hasUserAudio = true;
         activeMediaFiles.push(voicePath);
@@ -441,15 +442,17 @@ async function processMessage(msg: NewMessage): Promise<void> {
         }
       }
 
+      const attachmentTag = `\n[语音附件: ${fileName}]`;
       if (analysis) {
-        cleanContent += `\n[系统多模态分析: ${analysis.description}]`;
-      } else if (!isBotResponse) {
-        cleanContent += `\n[历史语音消息 (未分析)]`;
+        cleanContent += `${attachmentTag}\n(系统多模态预分析: ${analysis.description})`;
+      } else {
+        cleanContent += attachmentTag;
       }
     }
 
     // 图片处理
     if (fs.existsSync(imagePath)) {
+      const fileName = `image_${m.id}.jpg`;
       if (!isBotResponse) activeMediaFiles.push(imagePath);
 
       let analysis;
@@ -463,10 +466,11 @@ async function processMessage(msg: NewMessage): Promise<void> {
         }
       }
 
+      const attachmentTag = `\n[图片附件: ${fileName}]`;
       if (analysis) {
-        cleanContent += `\n[系统视觉扫描: ${analysis.description}]`;
-      } else if (!isBotResponse) {
-        cleanContent += `\n[历史图片 (未分析)]`;
+        cleanContent += `${attachmentTag}\n(系统视觉扫描结果: ${analysis.description})`;
+      } else {
+        cleanContent += attachmentTag;
       }
     }
 
