@@ -291,6 +291,8 @@ async function processMessage(msg: NewMessage): Promise<void> {
   const group = registeredGroups[msg.chat_jid];
   if (!group) return;
 
+  const mediaDir = path.join(DATA_DIR, 'media');
+
   // 关键修复：允许处理 from_me 消息（支持私聊），但严格排除助手发出的内容
   // 排除：以 🐾 或 📦 开头的消息（包括新的多媒体占位符）或以助手名开头的文本
   if (msg.from_me && (msg.content.startsWith('🐾') || msg.content.startsWith('📦') || msg.content.startsWith(`${ASSISTANT_NAME}:`))) {
@@ -301,7 +303,6 @@ async function processMessage(msg: NewMessage): Promise<void> {
 
   // --- 关键修复：空消息过滤 ---
   // 如果内容为空且没有媒体文件，直接忽略，防止 WhatsApp 系统消息或同步空消息触发重复回复。
-  const mediaDir = path.join(DATA_DIR, 'media');
   const hasVoice = fs.existsSync(path.join(mediaDir, `voice_${msg.id}.ogg`));
   const hasImage = fs.existsSync(path.join(mediaDir, `image_${msg.id}.jpg`));
   
@@ -383,17 +384,26 @@ async function processMessage(msg: NewMessage): Promise<void> {
 
   // Check for media attachments for this specific message to update log content
   let logContent = content;
-  const currentImage = path.join(DATA_DIR, 'media', `image_${msg.id}.jpg`);
-  const currentVoice = path.join(DATA_DIR, 'media', `voice_${msg.id}.ogg`);
   const currentAttachments: string[] = [];
   
-  if (fs.existsSync(currentImage)) {
-    logContent = (logContent || '') + ` [IMAGE: image_${msg.id}.jpg]`;
-    currentAttachments.push(currentImage);
-  }
-  if (fs.existsSync(currentVoice)) {
-    logContent = (logContent || '') + ` [AUDIO: voice_${msg.id}.ogg]`;
-    currentAttachments.push(currentVoice);
+  if (fs.existsSync(mediaDir)) {
+    // 动态搜索所有以当前 msg.id 结尾的文件（兼容不同前缀和后缀）
+    const files = fs.readdirSync(mediaDir);
+    const msgFiles = files.filter(f => f.includes(`_${msg.id}.`));
+    
+    for (const file of msgFiles) {
+      const fullPath = path.join(mediaDir, file);
+      const ext = path.extname(file).toLowerCase();
+      let typeLabel = 'FILE';
+      
+      if (['.jpg', '.jpeg', '.png'].includes(ext)) typeLabel = 'IMAGE';
+      else if (['.ogg', '.mp3', '.wav'].includes(ext)) typeLabel = 'AUDIO';
+      else if (['.mp4', '.mov'].includes(ext)) typeLabel = 'VIDEO';
+      else if (['.pdf', '.doc', '.docx', '.txt'].includes(ext)) typeLabel = 'DOC';
+
+      logContent = (logContent || '') + ` [${typeLabel}: ${file}]`;
+      currentAttachments.push(fullPath);
+    }
   }
 
   // --- Log Interaction Start ---
@@ -427,51 +437,29 @@ async function processMessage(msg: NewMessage): Promise<void> {
     const imagePath = path.join(mediaDir, `image_${m.id}.jpg`);
     const analysisCachePath = path.join(mediaDir, `analysis_${m.id}.json`);
     
-    // 语音处理
-    if (fs.existsSync(voicePath)) {
-      const fileName = `voice_${m.id}.ogg`;
-      // 历史语音仅保留文本引用，不再加入 activeMediaFiles，防止模型混淆当前焦点
-      
-      let analysis;
-      if (fs.existsSync(analysisCachePath)) {
-        analysis = loadJson<any>(analysisCachePath, null);
-      } else {
-        // 关键优化：仅对当前那条触发消息进行实时分析
-        if (m.id === msg.id) {
-          analysis = await analyzeMedia(voicePath);
+    // 处理消息关联的所有附件 (历史记录展现)
+    if (fs.existsSync(mediaDir)) {
+      const msgFiles = fs.readdirSync(mediaDir).filter(f => f.includes(`_${m.id}.`));
+      for (const file of msgFiles) {
+        const ext = path.extname(file).toLowerCase();
+        let label = '附件';
+        if (['.jpg', '.jpeg', '.png'].includes(ext)) label = '图片附件';
+        else if (['.ogg', '.mp3', '.wav'].includes(ext)) label = '语音附件';
+        else if (['.mp4', '.mov'].includes(ext)) label = '视频附件';
+        else if (['.pdf', '.doc', '.docx', '.txt'].includes(ext)) label = '文档附件';
+
+        const analysisCachePath = path.join(mediaDir, `analysis_${m.id}.json`);
+        let analysis;
+        if (fs.existsSync(analysisCachePath)) {
+          analysis = loadJson<any>(analysisCachePath, null);
+        } else if (m.id === msg.id && (label === '图片附件' || label === '语音附件')) {
+          // 仅对当前消息的图文进行实时分析
+          analysis = await analyzeMedia(path.join(mediaDir, file));
           if (analysis) saveJson(analysisCachePath, analysis);
         }
-      }
 
-      const attachmentTag = `\n[历史语音: ${fileName}]`;
-      if (analysis) {
-        cleanContent += `${attachmentTag}\n(系统多模态预分析: ${analysis.description})`;
-      } else {
-        cleanContent += attachmentTag;
-      }
-    }
-
-    // 图片处理
-    if (fs.existsSync(imagePath)) {
-      const fileName = `image_${m.id}.jpg`;
-      // 历史图片仅保留文本引用，不再加入 activeMediaFiles，防止模型混淆当前焦点
-
-      let analysis;
-      if (fs.existsSync(analysisCachePath)) {
-        analysis = loadJson<any>(analysisCachePath, null);
-      } else {
-        // 关键优化：仅对当前那条触发消息进行实时分析
-        if (m.id === msg.id) {
-          analysis = await analyzeMedia(imagePath);
-          if (analysis) saveJson(analysisCachePath, analysis);
-        }
-      }
-
-      const attachmentTag = `\n[历史图片: ${fileName}]`;
-      if (analysis) {
-        cleanContent += `${attachmentTag}\n(系统视觉扫描结果: ${analysis.description})`;
-      } else {
-        cleanContent += attachmentTag;
+        const tag = `\n[${label}: ${file}]`;
+        cleanContent += analysis ? `${tag}\n(系统预分析: ${analysis.description})` : tag;
       }
     }
 
@@ -1342,11 +1330,16 @@ async function connectWhatsApp(): Promise<void> {
       // Always store chat metadata for group discovery
       storeChatMetadata(chatJid, timestamp);
 
-      // 增强型：多模态支持 - 自动下载多媒体消息 (语音和图片)
-      if (registeredGroups[chatJid] && (msg.message?.audioMessage || msg.message?.imageMessage)) {
+      // 增强型：多模态支持 - 自动下载多媒体消息 (语音、图片、视频、文档)
+      const mediaMsg = msg.message?.audioMessage || msg.message?.imageMessage || msg.message?.videoMessage || msg.message?.documentMessage;
+      if (registeredGroups[chatJid] && mediaMsg) {
         try {
           const isAudio = !!msg.message?.audioMessage;
-          const mediaType = isAudio ? 'AUDIO' : 'IMAGE';
+          const isImage = !!msg.message?.imageMessage;
+          const isVideo = !!msg.message?.videoMessage;
+          const isDoc = !!msg.message?.documentMessage;
+
+          let mediaType: any = isAudio ? 'AUDIO' : (isImage ? 'IMAGE' : (isVideo ? 'VIDEO' : 'DOCUMENT'));
           logger.info({ chatJid, mediaType }, `Downloading ${mediaType} attachment...`);
 
           const buffer = await downloadMediaMessage(
@@ -1362,8 +1355,17 @@ async function connectWhatsApp(): Promise<void> {
           const mediaDir = path.join(DATA_DIR, 'media');
           if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true });
           
-          const ext = isAudio ? 'ogg' : 'jpg';
-          const fileName = `${isAudio ? 'voice' : 'image'}_${msg.key.id}.${ext}`;
+          let ext = 'bin';
+          if (isAudio) ext = 'ogg';
+          else if (isImage) ext = 'jpg';
+          else if (isVideo) ext = 'mp4';
+          else if (isDoc) {
+            const fileName = msg.message?.documentMessage?.fileName || '';
+            ext = fileName.split('.').pop() || 'pdf';
+          }
+
+          const prefix = isAudio ? 'voice' : (isImage ? 'image' : (isVideo ? 'video' : 'doc'));
+          const fileName = `${prefix}_${msg.key.id}.${ext}`;
           const filePath = path.join(mediaDir, fileName);
           fs.writeFileSync(filePath, buffer as Buffer);
           

@@ -380,6 +380,20 @@
                     ${renderPath(filename)}
                 </div>`;
             });
+
+            safeContent = safeContent.replace(/\[VIDEO: (.*?)\]/g, (match, filename) => {
+                return `<div class="inline-block align-top ml-1 mb-1">
+                    <span class="text-[9px] bg-cyan-950 text-cyan-400 px-1 rounded border border-cyan-900/50 uppercase font-black align-middle">VIDEO</span>
+                    ${renderPath(filename)}
+                </div>`;
+            });
+
+            safeContent = safeContent.replace(/\[DOC: (.*?)\]/g, (match, filename) => {
+                return `<div class="inline-block align-top ml-1 mb-1">
+                    <span class="text-[9px] bg-blue-950 text-blue-400 px-1 rounded border border-blue-900/50 uppercase font-black align-middle">DOC</span>
+                    ${renderPath(filename)}
+                </div>`;
+            });
             return safeContent;
         }
 
