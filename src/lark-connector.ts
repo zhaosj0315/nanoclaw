@@ -30,7 +30,7 @@ export class LarkConnector {
 
         const messageId = message.message_id;
         const msgType = (message as any).msg_type;
-        // Aggressively clean chat_id: remove all whitespace to prevent JID mismatches
+        // 彻底归一化：移除所有空白字符，确保 JID 绝对纯净
         const chatId = message.chat_id.replace(/\s+/g, '');
         let content = '';
         let attachments: string[] = [];
@@ -50,7 +50,7 @@ export class LarkConnector {
             content = '[VIDEO]';
             await this.downloadResource(messageId, parsedContent.file_key, 'file', `video_${messageId}.mp4`);
           } else if (msgType === 'file') {
-            const fileName = parsedContent.file_name || 'file';
+            const fileName = (parsedContent.file_name || 'file').replace(/\s+/g, '_');
             content = `[DOCUMENT: ${fileName}]`;
             await this.downloadResource(messageId, parsedContent.file_key, 'file', `doc_${messageId}_${fileName}`);
           }
@@ -62,7 +62,7 @@ export class LarkConnector {
         const msg: NewMessage = {
           id: messageId,
           chat_jid: `lark@${chatId}`,
-          sender: sender.sender_id?.open_id || 'unknown',
+          sender: (sender.sender_id?.open_id || 'unknown').replace(/\s+/g, ''),
           sender_name: 'Lark User',
           content: content,
           timestamp: new Date(parseInt(message.create_time)).toISOString(),

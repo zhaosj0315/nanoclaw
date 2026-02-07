@@ -287,12 +287,17 @@ function getAvailableGroups(): AvailableGroup[] {
 
 import { analyzeMedia } from './media-analyzer.js';
 
-async function processMessage(msg: NewMessage): Promise<void> {
-  const chatJid = msg.chat_jid.trim();
+async function processMessage(msg: any): Promise<void> {
+  // 核心防御：对所有输入的 JID 进行强制去空格归一化
+  const rawJid = msg.chat_jid || '';
+  const chatJid = rawJid.replace(/\s+/g, '');
+  
+  logger.info({ id: msg.id, chatJid, content: msg.content }, '--- UNIFIED_PIPELINE_ENTRY ---');
+
   const group = registeredGroups[chatJid];
   
   if (!group) {
-    logger.warn({ chatJid, registeredJids: Object.keys(registeredGroups) }, 'Message ignored: Chat JID not in registered groups');
+    logger.warn({ chatJid, available: Object.keys(registeredGroups) }, 'PIPELINE_BLOCKED: JID_NOT_REGISTERED');
     return;
   }
 
@@ -303,7 +308,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
     return;
   }
 
-  const content = msg.content.trim();
+  const content = (msg.content || '').trim();
 
   // --- 关键修复：空消息过滤 ---
   let hasAttachments = false;
@@ -312,56 +317,27 @@ async function processMessage(msg: NewMessage): Promise<void> {
   }
   
   if (!content && !hasAttachments) {
-    logger.debug({ msgId: msg.id }, 'Ignoring empty message with no media');
+    logger.debug({ msgId: msg.id }, 'PIPELINE_SKIPPED: EMPTY_MESSAGE');
     return;
   }
-
-  logger.info(
-    { group: group.name, user: msg.sender_name, content, chatJid },
-    'Processing message in unified pipeline',
-  );
 
   const isMainGroup = group.folder.toLowerCase() === MAIN_GROUP_FOLDER.toLowerCase();
   const isPrivateChat = chatJid.endsWith('@s.whatsapp.net') || chatJid.startsWith('lark@');
 
-  // --- 交互式菜单状态拦截 ---
-  const activeMenu = chatMenuState[chatJid];
-  if (activeMenu) {
-    // ... (menu logic remains same)
-    if (Date.now() - activeMenu.timestamp > 5 * 60 * 1000) {
-      delete chatMenuState[chatJid];
-    } else {
-      const selection = parseInt(content);
-      if (['cancel', '取消', '退出', 'stop', '🛑'].includes(content.toLowerCase())) {
-        delete chatMenuState[chatJid];
-        await sendMessage(chatJid, '✅ 菜单已取消，请重新输入指令。');
-        return;
-      }
-      if (!isNaN(selection) && selection >= 1 && selection <= activeMenu.options.length) {
-        const selectedOption = activeMenu.options[selection - 1];
-        msg.content = `[SYSTEM_INJECTION] 用户已选择: "${selectedOption}"。请立即执行此操作。注意：只允许调用工具（如发文件），严禁输出任何废话或汇报文本。`;
-        msg.isMenuExecution = true;
-        delete chatMenuState[chatJid];
-      } else {
-        if (content) logger.warn({ content }, 'Menu active, ignoring non-selection input');
-        return;
-      }
-    }
-  }
-
   // Skip trigger requirement if it's the main group, a private chat, or the trigger is present
   const hasTrigger = TRIGGER_PATTERN.test(content);
   if (!isMainGroup && !isPrivateChat && !hasTrigger) {
-    logger.debug({ chatJid, isPrivateChat, hasTrigger }, 'Message skipped: missing trigger');
+    logger.debug({ chatJid, isPrivateChat, hasTrigger }, 'PIPELINE_SKIPPED: MISSING_TRIGGER');
     return;
   }
 
   // --- [UX 升级] 表情回应机制：已阅 ---
+  // 修正：数据库字段名为 sender_jid
   const msgKey = {
     remoteJid: chatJid,
-    fromMe: msg.from_me,
+    fromMe: msg.from_me === 1 || msg.from_me === true,
     id: msg.id,
-    participant: msg.sender
+    participant: msg.sender_jid || msg.sender
   };
 
   if (!chatJid.startsWith('lark@')) {
@@ -374,7 +350,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
   const GRACE_PERIOD = 30 * 1000;
   
   if (now - msgTimestamp > (2 * 60 * 1000) + GRACE_PERIOD) {
-    logger.info({ msgId: msg.id, diff: now - msgTimestamp }, 'Skipping expired message');
+    logger.info({ msgId: msg.id, diff: now - msgTimestamp }, 'PIPELINE_SKIPPED: EXPIRED');
     return;
   }
 
