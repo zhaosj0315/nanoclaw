@@ -101,27 +101,22 @@
             animation: flash-new 2s ease-out;
         }
 
-        /* Filter Tags */
-        .filter-tag {
-            cursor: pointer;
-            opacity: 0.5;
-            transition: all 0.2s;
-            border: 1px solid transparent;
+        /* Line Clamp for Question */
+        .line-clamp-3 {
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
         }
-        .filter-tag:hover {
-            opacity: 0.8;
-        }
-        .filter-tag.active {
-            opacity: 1;
-            background-color: rgba(51, 65, 85, 0.5);
-            border-color: rgba(71, 85, 105, 0.5);
-            box-shadow: 0 0 10px rgba(0,0,0,0.2);
+        .group:hover .line-clamp-3 {
+            -webkit-line-clamp: unset;
         }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-300 font-mono p-4 h-screen flex flex-col overflow-hidden">
     <div class="w-full h-full flex flex-col">
         <header class="mb-4 flex justify-between items-center shrink-0 px-2">
+            <!-- ... (Header content remains same) ... -->
             <div class="flex items-center gap-8">
                 <h1 class="text-xl font-bold flex items-center gap-3">
                     <img src="/assets/logo.png" class="h-6 w-6" alt="Logo" onerror="this.style.display='none'">
@@ -162,11 +157,11 @@
                 <table class="w-full text-left text-[12px] border-collapse relative table-fixed">
                     <thead class="bg-slate-950 text-slate-500 uppercase text-[10px] sticky top-0 z-10 shadow-md">
                         <tr class="border-b border-slate-800">
-                            <th class="px-3 py-2 w-[80px] font-black">Time</th>
-                            <th class="px-3 py-2 w-[110px] font-black">Status</th>
-                            <th class="px-3 py-2 w-[65px] font-black">Dur.</th>
-                            <th class="px-3 py-2 w-[110px] font-black">Session</th>
-                            <th class="px-3 py-2 w-[30%] font-black">Question</th>
+                            <th class="px-3 py-2 w-[70px] font-black">Time</th>
+                            <th class="px-3 py-2 w-[90px] font-black">Status</th>
+                            <th class="px-3 py-2 w-[80px] font-black">Metrics</th>
+                            <th class="px-3 py-2 w-[90px] font-black">Session</th>
+                            <th class="px-3 py-2 w-[20%] font-black">Question</th>
                             <th class="px-3 py-2 font-black">Answer / Tactical Actions</th>
                         </tr>
                     </thead>
