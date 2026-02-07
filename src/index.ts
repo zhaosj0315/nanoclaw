@@ -399,8 +399,8 @@ async function processMessage(msg: NewMessage): Promise<void> {
   // --- Log Interaction Start ---
   createInteractionTask(msg.id, msg.chat_jid, logContent || '[Media Message]', currentAttachments);
 
-  // 关键优化：减少上下文深度，仅保留最近 15 条，防止 AI 纠缠历史话题
-  const recentMessages = getRecentMessages(msg.chat_jid, 15);
+  // 关键优化：大幅减少上下文深度，仅保留最近 3 条，防止历史噪音污染当前任务
+  const recentMessages = getRecentMessages(msg.chat_jid, 3);
   const memories = getMemories(msg.chat_jid);
 
   const memoryContext = memories.length > 0 
@@ -485,7 +485,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
 
   const historyContext = enhancedHistory.join('\n');
 
-  const prompt = `${memoryContext}\n--- CONVERSATION HISTORY (Last 15 messages) ---\n${historyContext}\n--- END HISTORY ---\n\n请根据以上长期记忆和对话历史，回答用户当前的问题。如果历史记录中包含图片或音频路径，系统已通过多模态接口将其原生加载。请务必仔细分析这些视觉/听觉内容，并在回复中具体描述你所看到的内容或听到的指令。如果用户提到了新的材料或需要记住的事实，请在回复中体现。`;
+  const prompt = `${memoryContext}\n--- CONVERSATION HISTORY (Recent context) ---\n${historyContext}\n--- END HISTORY ---\n\n请根据以上长期记忆和对话历史，回答用户当前的问题。如果历史记录中包含图片或音频路径，系统已通过多模态接口将其原生加载。请务必仔细分析这些视觉/听觉内容，并在回复中具体描述你所看到的内容或听到的指令。如果用户提到了新的材料或需要记住的事实，请在回复中体现。`;
 
   if (recentMessages.length === 0) return;
 
