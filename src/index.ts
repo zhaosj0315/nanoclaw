@@ -302,11 +302,13 @@ async function processMessage(msg: NewMessage): Promise<void> {
   const content = msg.content.trim();
 
   // --- 关键修复：空消息过滤 ---
-  // 如果内容为空且没有媒体文件，直接忽略，防止 WhatsApp 系统消息或同步空消息触发重复回复。
-  const hasVoice = fs.existsSync(path.join(mediaDir, `voice_${msg.id}.ogg`));
-  const hasImage = fs.existsSync(path.join(mediaDir, `image_${msg.id}.jpg`));
+  // 动态检查该消息是否有任何附件（兼容 WA 和 Lark 的各种前缀/后缀）
+  let hasAttachments = false;
+  if (fs.existsSync(mediaDir)) {
+    hasAttachments = fs.readdirSync(mediaDir).some(f => f.includes(`_${msg.id}.`));
+  }
   
-  if (!content && !hasVoice && !hasImage) {
+  if (!content && !hasAttachments) {
     logger.debug({ msgId: msg.id }, 'Ignoring empty message with no media');
     return;
   }
@@ -369,6 +371,10 @@ async function processMessage(msg: NewMessage): Promise<void> {
     participant: msg.sender
   };
 
+  if (!msg.chat_jid.startsWith('lark@')) {
+    await sendReaction(msg.chat_jid, msgKey, '👀');
+  }
+
   // 关键修复：时效性检查
   // 如果消息时间早于当前时间 2 分钟以上（且不是重启瞬间的新消息），则视为过期历史，不再自动回复。
   const msgTimestamp = new Date(msg.timestamp).getTime();
@@ -378,11 +384,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
     return;
   }
 
-  if (!msg.chat_jid.startsWith('lark@')) {
-    await sendReaction(msg.chat_jid, msgKey, '👀');
-  }
-
-  // Check for media attachments for this specific message to update log content
+  // --- Log Interaction Start ---
   let logContent = content;
   const currentAttachments: string[] = [];
   
@@ -406,7 +408,6 @@ async function processMessage(msg: NewMessage): Promise<void> {
     }
   }
 
-  // --- Log Interaction Start ---
   createInteractionTask(msg.id, msg.chat_jid, logContent || '[Media Message]', currentAttachments);
 
   // 极致优化：彻底移除自动历史，仅发送当前请求，确保模型 100% 聚焦当前任务
@@ -1478,7 +1479,8 @@ async function main(): Promise<void> {
 
   // Initialize Lark Connector
   larkConnector = new LarkConnector(async (msg) => {
-    // Store message in DB first so history-based processing works
+    // 统一逻辑：连接器只负责“写入数据库”和“下载附件”
+    // 处理逻辑由中央 messageLoop 统一调度，实现多端功能完全同步
     storeGenericMessage({
       id: msg.id,
       chat_jid: msg.chat_jid,
@@ -1489,7 +1491,7 @@ async function main(): Promise<void> {
       from_me: msg.from_me
     });
 
-    // Lark messages automatically skip registered check for now or use 'main'
+    // 自动将飞书会话注册到处理清单
     if (!registeredGroups[msg.chat_jid]) {
         registeredGroups[msg.chat_jid] = {
             name: 'Lark Chat',
@@ -1498,7 +1500,7 @@ async function main(): Promise<void> {
             added_at: new Date().toISOString()
         };
     }
-    await processMessage(msg);
+    // 注意：不再此处直接调用 processMessage，让其进入数据库队列由 Loop 处理
   });
   larkConnector.start().catch(err => logger.error({ err }, 'Failed to start Lark connector'));
 

@@ -2,6 +2,7 @@ import * as lark from '@larksuiteoapi/node-sdk';
 import fs from 'fs';
 import path from 'path';
 import { 
+  DATA_DIR,
   LARK_APP_ID, 
   LARK_APP_SECRET 
 } from './config.js';
@@ -21,25 +22,43 @@ export class LarkConnector {
   }
 
   async start() {
-    // 初始化事件分发器
     const eventDispatcher = new lark.EventDispatcher({}).register({
       'im.message.receive_v1': async (data) => {
         const { message, sender } = data;
         if (!message || !sender) return;
-
-        // 忽略机器人自己的消息
         if (sender.sender_type === 'bot') return;
 
+        const messageId = message.message_id;
+        const msgType = (message as any).msg_type;
         let content = '';
+        let attachments: string[] = [];
+
         try {
           const parsedContent = JSON.parse(message.content);
-          content = parsedContent.text || '';
+          
+          if (msgType === 'text') {
+            content = parsedContent.text || '';
+          } else if (msgType === 'image') {
+            content = '[IMAGE]';
+            await this.downloadResource(messageId, parsedContent.image_key, 'image', `image_${messageId}.jpg`);
+          } else if (msgType === 'audio') {
+            content = '[AUDIO]';
+            await this.downloadResource(messageId, parsedContent.file_key, 'file', `voice_${messageId}.ogg`);
+          } else if (msgType === 'media') {
+            content = '[VIDEO]';
+            await this.downloadResource(messageId, parsedContent.file_key, 'file', `video_${messageId}.mp4`);
+          } else if (msgType === 'file') {
+            const fileName = parsedContent.file_name || 'file';
+            content = `[DOCUMENT: ${fileName}]`;
+            await this.downloadResource(messageId, parsedContent.file_key, 'file', `doc_${messageId}_${fileName}`);
+          }
         } catch (e) {
+          logger.error({ e, messageId }, 'Failed to parse Lark message content');
           content = message.content;
         }
 
         const msg: NewMessage = {
-          id: message.message_id,
+          id: messageId,
           chat_jid: `lark@${message.chat_id}`,
           sender: sender.sender_id?.open_id || 'unknown',
           sender_name: 'Lark User',
@@ -52,23 +71,49 @@ export class LarkConnector {
       },
     });
 
-    // --- 修正：长连接模式启动参数 ---
     this.wsClient = new lark.WSClient({
       appId: LARK_APP_ID,
       appSecret: LARK_APP_SECRET,
       logger: logger as any,
     });
 
-    // eventDispatcher 需要传递给 start 方法，而不是构造函数
-    await this.wsClient.start({
-      eventDispatcher: eventDispatcher
-    });
-
-    logger.info('✓ Lark Long-Connection (WebSocket) started successfully');
-    logger.info('  No public URL or domain required.');
+    await this.wsClient.start({ eventDispatcher });
+    logger.info('✓ Lark Long-Connection (WebSocket) started successfully with Multimodal Support');
   }
 
-  async sendMessage(chatJid: string, text: string, options: { filePath?: string, quoted?: any } = {}) {
+  private async downloadResource(messageId: string, fileKey: string, type: 'image' | 'file', targetName: string) {
+    const mediaDir = path.join(DATA_DIR, 'media');
+    if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true });
+    const targetPath = path.join(mediaDir, targetName);
+
+    try {
+      logger.info({ messageId, type, targetName }, 'Downloading Lark resource...');
+      const response = await this.client.im.messageResource.get({
+        path: { message_id: messageId, file_key: fileKey },
+        params: { type: type },
+      });
+
+      // response is a stream in the Lark Node.js SDK for this endpoint
+      const writer = fs.createWriteStream(targetPath);
+      // @ts-ignore
+      response.pipe(writer);
+
+      return new Promise((resolve, reject) => {
+        writer.on('finish', () => {
+          logger.info({ targetPath }, 'Lark resource saved');
+          resolve(targetPath);
+        });
+        writer.on('error', (err) => {
+          logger.error({ err, messageId }, 'Failed to write Lark resource');
+          reject(err);
+        });
+      });
+    } catch (err) {
+      logger.error({ err, messageId }, 'Failed to download Lark resource');
+    }
+  }
+
+  async sendMessage(chatJid: string, text: string, options: { filePath?: string, ptt?: boolean, quoted?: any } = {}) {
     const chatId = chatJid.replace('lark@', '');
     
     try {
@@ -102,7 +147,7 @@ export class LarkConnector {
         }
       }
 
-      if (text) {
+      if (text && !text.includes('__SILENT_FINISH__')) {
         await this.client.im.message.create({
           params: { receive_id_type: 'chat_id' },
           data: {
