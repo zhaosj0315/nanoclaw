@@ -532,12 +532,16 @@
 
         async function fetchLog() {
             try {
-                const res = await fetch('/api/log');
+                // 核心修复：强制清除 URL 中的凭据，防止浏览器安全拦截
+                const cleanUrl = new URL('/api/log', window.location.origin);
+                cleanUrl.username = ''; // 强行抹除用户名
+                cleanUrl.password = ''; // 强行抹除密码
+                
+                const res = await fetch(cleanUrl.href);
                 
                 if (res.status === 401) {
-                    statusIndicator.textContent = 'AUTH_REQUIRED';
-                    statusIndicator.classList.add('text-red-500', 'animate-pulse');
-                    return; // Stop processing but don't reload loop
+                    statusIndicator.innerHTML = '<span class="text-red-500 animate-pulse cursor-pointer" onclick="window.location.reload()">AUTH_REQUIRED: CLICK_TO_LOGIN</span>';
+                    return;
                 }
                 
                 if (!res.ok) {
@@ -577,7 +581,11 @@
                 renderCurrentData();
             } catch (e) { 
                 console.error(e);
-                statusIndicator.innerHTML = `<span class="text-red-500">LINK_OFFLINE: ${e.message}</span>`;
+                if (e.message.includes('credentials')) {
+                    statusIndicator.innerHTML = '<span class="text-red-500 text-[9px]">ERR: REMOVE CREDENTIALS FROM ADDRESS BAR AND REFRESH</span>';
+                } else {
+                    statusIndicator.innerHTML = `<span class="text-red-500">LINK_OFFLINE: ${e.message}</span>`;
+                }
             }
         }
         setInterval(fetchLog, 2000); fetchLog();
