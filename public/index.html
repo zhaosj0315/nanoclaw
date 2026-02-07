@@ -207,6 +207,11 @@
                         <span class="text-slate-500 uppercase font-black">Latency</span>
                         <span id="stat-latency" class="text-amber-400 font-mono">-</span>
                     </div>
+                    <div class="w-px bg-slate-800 self-stretch"></div>
+                    <div class="flex flex-col">
+                        <span class="text-slate-500 uppercase font-black">Audit_Node</span>
+                        <span id="visitor-node" class="text-rose-400 font-mono">-</span>
+                    </div>
                 </div>
                 <div id="status-indicator" class="text-[10px] text-slate-600 font-mono tracking-widest uppercase">Initializing...</div>
             </div>
@@ -217,10 +222,11 @@
                 <table class="w-full text-left text-[12px] border-collapse relative table-fixed">
                     <thead class="bg-slate-950 text-slate-500 uppercase text-[10px] sticky top-0 z-10 shadow-md">
                         <tr class="border-b border-slate-800 text-[10px]">
-                            <th class="px-3 py-2 w-[80px] min-w-[80px] font-black">Time</th>
-                            <th class="px-3 py-2 w-[110px] min-w-[110px] font-black">Status</th>
+                            <th class="px-3 py-2 w-[70px] min-w-[70px] font-black">Time</th>
+                            <th class="px-3 py-2 w-[90px] min-w-[90px] font-black">Status</th>
                             <th class="px-3 py-2 w-[80px] min-w-[80px] font-black">Metrics</th>
                             <th class="px-3 py-2 w-[120px] min-w-[120px] font-black">Session</th>
+                            <th class="px-3 py-2 w-[140px] min-w-[140px] font-black">Origin_Node</th>
                             <th class="px-3 py-2 w-[20%] font-black">Question</th>
                             <th class="px-3 py-2 font-black">Answer / Tactical Actions</th>
                         </tr>
@@ -258,6 +264,19 @@
         const drawerContent = document.getElementById('drawer-content');
         const drawerTitle = document.getElementById('drawer-title');
         const searchBox = document.getElementById('search-box');
+
+        const geoCache = new Map();
+        async function getGeo(ip) {
+            if (!ip || ip === '127.0.0.1' || ip.includes('::')) return 'LOCAL';
+            if (geoCache.has(ip)) return geoCache.get(ip);
+            try {
+                const res = await fetch(`http://ip-api.com/json/${ip}?fields=city,regionName`);
+                const data = await res.json();
+                const loc = data.city ? `${data.city}, ${data.regionName}` : 'UNKNOWN';
+                geoCache.set(ip, loc);
+                return loc;
+            } catch (e) { return 'ERROR'; }
+        }
 
         const INTENT_KEYWORDS = ["发", "画", "生成", "文件", "图", "语音", "播报", "send", "generate", "image", "voice"];
         const ACTION_TYPES = ["File", "Image", "Audio"];
@@ -456,9 +475,18 @@
                     <td class="px-3 py-3 align-top">${getStatusBadge(t.status, hasWarning, t.id)}</td>
                     <td class="px-3 py-3 align-top">${getDurationBadge(t.duration_ms, t.token_usage, hasWarning)}</td>
                     <td class="px-3 py-3 align-top">${renderSession(t.session_id)}</td>
+                    <td class="px-3 py-3 align-top">
+                        <div class="flex flex-col gap-0.5">
+                            <span class="text-slate-400 font-mono text-[10px]">${t.origin_ip || 'NODE_LOCAL'}</span>
+                            <span class="text-[9px] text-rose-500/70 font-black uppercase tracking-tighter">${geoCache.get(t.origin_ip) || 'RESOLVING...'}</span>
+                        </div>
+                    </td>
                     <td class="px-3 py-3 align-top text-slate-300 w-[20%]"><div class="line-clamp-3 text-[11px]">${renderQuestion(t.content, t.attachments)}</div></td>
                     <td class="px-3 py-3 align-top w-[60%]">${renderResponses(t.responses, t.attachments)}</td></tr>`;
             }).join('');
+            
+            // Kick off geo resolution for any new IPs
+            log.forEach(t => { if (t.origin_ip && !geoCache.has(t.origin_ip)) getGeo(t.origin_ip).then(() => renderCurrentData()); });
         }
 
         async function fetchLog() {
@@ -466,6 +494,13 @@
                 const res = await fetch('/api/log');
                 if (res.status === 401) { window.location.reload(); return; }
                 lastData = await res.json();
+                
+                const { stats } = lastData;
+                if (stats && stats.visitor_ip) {
+                    const geo = await getGeo(stats.visitor_ip);
+                    document.getElementById('visitor-node').textContent = `${stats.visitor_ip} (${geo})`;
+                }
+
                 statusIndicator.textContent = `FEED_SYNCED: ${new Date().toLocaleTimeString()}`;
                 renderCurrentData();
             } catch (e) { statusIndicator.textContent = 'LINK_OFFLINE'; }

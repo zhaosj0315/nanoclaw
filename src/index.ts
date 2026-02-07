@@ -287,6 +287,19 @@ function getAvailableGroups(): AvailableGroup[] {
 
 import { analyzeMedia } from './media-analyzer.js';
 
+let systemNodeIp = '127.0.0.1';
+
+async function fetchSystemIp() {
+  try {
+    const res = await fetch('https://api.ipify.org?format=json');
+    const data = await res.json() as any;
+    systemNodeIp = data.ip;
+    logger.info({ systemNodeIp }, 'System Node IP identified');
+  } catch (err) {
+    logger.debug('Failed to fetch public IP, using local fallback');
+  }
+}
+
 async function processMessage(msg: any): Promise<void> {
   // 核心防御：彻底移除所有不可见字符和非标空格
   const rawJid = msg.chat_jid || '';
@@ -378,7 +391,7 @@ async function processMessage(msg: any): Promise<void> {
     }
   }
 
-  createInteractionTask(msg.id, msg.chat_jid, logContent || '[Media Message]', currentAttachments);
+  createInteractionTask(msg.id, msg.chat_jid, logContent || '[Media Message]', currentAttachments, { ip: systemNodeIp });
 
   // 极致优化：彻底移除自动历史，仅发送当前请求，确保模型 100% 聚焦当前任务
   // 如需参考历史，用户会在指令中明确说明。
@@ -1446,6 +1459,7 @@ async function main(): Promise<void> {
   initDatabase();
   logger.info('Database initialized');
   loadState();
+  await fetchSystemIp();
 
   // Initialize Lark Connector
   larkConnector = new LarkConnector(async (msg) => {

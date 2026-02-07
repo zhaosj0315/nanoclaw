@@ -36,6 +36,8 @@ export interface InteractionTask {
   duration_ms?: number;
   token_usage?: { prompt: number; completion: number; total: number };
   attachments?: string[];
+  origin_ip?: string;
+  origin_location?: string;
 }
 
 export interface InteractionResponse {
@@ -103,7 +105,9 @@ export function initDatabase() {
       created_at DATETIME,
       duration_ms INTEGER,
       token_usage TEXT,
-      attachments TEXT
+      attachments TEXT,
+      origin_ip TEXT,
+      origin_location TEXT
     );
     CREATE TABLE IF NOT EXISTS interaction_responses (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -296,13 +300,13 @@ export function getLastGroupSync(): string | undefined {
 
 // --- Interaction Log (Q&A Physics Binding) ---
 
-export function createInteractionTask(id: string, session_id: string, content: string, attachments: string[] = []) {
+export function createInteractionTask(id: string, session_id: string, content: string, attachments: string[] = [], origin: { ip?: string, loc?: string } = {}) {
   const attachmentsStr = JSON.stringify(attachments);
   db.prepare(`
-    INSERT INTO interaction_tasks (id, session_id, content, status, created_at, duration_ms, token_usage, attachments)
-    VALUES (?, ?, ?, 'PENDING', ?, NULL, NULL, ?)
+    INSERT INTO interaction_tasks (id, session_id, content, status, created_at, duration_ms, token_usage, attachments, origin_ip, origin_location)
+    VALUES (?, ?, ?, 'PENDING', ?, NULL, NULL, ?, ?, ?)
     ON CONFLICT(id) DO NOTHING
-  `).run(id, session_id, content, new Date().toISOString(), attachmentsStr);
+  `).run(id, session_id, content, new Date().toISOString(), attachmentsStr, origin.ip || null, origin.loc || null);
 }
 
 export function completeInteractionTask(id: string, usage?: { prompt: number; completion: number; total: number }) {

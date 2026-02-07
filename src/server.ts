@@ -47,7 +47,17 @@ app.get('/api/log', (req, res) => {
     try {
         const log = getInteractionLog(50);
         const stats = getDailyStats();
-        res.json({ log, stats });
+        
+        // 捕获访问者 IP
+        const visitorIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+        
+        res.json({ 
+            log, 
+            stats: { 
+                ...stats, 
+                visitor_ip: visitorIp 
+            } 
+        });
     } catch (err) {
         logger.error({ err }, 'Failed to fetch interaction log');
         res.status(500).json({ error: 'Internal Server Error' });
