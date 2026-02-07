@@ -319,7 +319,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
   );
 
   const isMainGroup = group.folder.toLowerCase() === MAIN_GROUP_FOLDER.toLowerCase();
-  const isPrivateChat = msg.chat_jid.endsWith('@s.whatsapp.net');
+  const isPrivateChat = msg.chat_jid.endsWith('@s.whatsapp.net') || msg.chat_jid.startsWith('lark@');
 
   // --- 交互式菜单状态拦截 ---
   const activeMenu = chatMenuState[msg.chat_jid];
