@@ -278,15 +278,20 @@
             drawer.classList.add('open');
             
             try {
-                const res = await fetch(`/media/${filename}`);
-                const text = await res.text();
-                if (filename.endsWith('.md')) {
-                    drawerContent.innerHTML = marked.parse(text);
+                const url = `/media/${filename}`;
+                if (filename.toLowerCase().endsWith('.pdf')) {
+                    drawerContent.innerHTML = `<iframe src="${url}" class="w-full h-full border-0 rounded" title="${filename}"></iframe>`;
                 } else {
-                    drawerContent.innerHTML = `<pre><code>${text.replace(/</g, '&lt;')}</code></pre>`;
+                    const res = await fetch(url);
+                    const text = await res.text();
+                    if (filename.toLowerCase().endsWith('.md')) {
+                        drawerContent.innerHTML = marked.parse(text);
+                    } else {
+                        drawerContent.innerHTML = `<pre class="whitespace-pre-wrap break-all text-xs font-mono text-slate-300 bg-slate-900/50 p-4 rounded border border-slate-800"><code>${text.replace(/</g, '&lt;')}</code></pre>`;
+                    }
                 }
             } catch (e) {
-                drawerContent.innerHTML = `<div class="text-red-500">FAILED_TO_LOAD_FILE</div>`;
+                drawerContent.innerHTML = `<div class="text-red-500 font-bold">FAILED_TO_LOAD_FILE</div><div class="text-slate-600 text-xs mt-2">${e.message}</div>`;
             }
         }
 
