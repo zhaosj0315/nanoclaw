@@ -216,11 +216,11 @@
             <div class="overflow-auto flex-1">
                 <table class="w-full text-left text-[12px] border-collapse relative table-fixed">
                     <thead class="bg-slate-950 text-slate-500 uppercase text-[10px] sticky top-0 z-10 shadow-md">
-                        <tr class="border-b border-slate-800">
-                            <th class="px-3 py-2 w-[70px] font-black">Time</th>
-                            <th class="px-3 py-2 w-[90px] font-black">Status</th>
-                            <th class="px-3 py-2 w-[80px] font-black">Metrics</th>
-                            <th class="px-3 py-2 w-[90px] font-black">Session</th>
+                        <tr class="border-b border-slate-800 text-[10px]">
+                            <th class="px-3 py-2 w-[80px] min-w-[80px] font-black">Time</th>
+                            <th class="px-3 py-2 w-[110px] min-w-[110px] font-black">Status</th>
+                            <th class="px-3 py-2 w-[80px] min-w-[80px] font-black">Metrics</th>
+                            <th class="px-3 py-2 w-[120px] min-w-[120px] font-black">Session</th>
                             <th class="px-3 py-2 w-[20%] font-black">Question</th>
                             <th class="px-3 py-2 font-black">Answer / Tactical Actions</th>
                         </tr>
@@ -379,14 +379,16 @@
                     content = `<span class="text-blue-400 underline decoration-blue-800/50 cursor-pointer" onclick="openFileInDrawer('${fileName}')">${fileName}</span>`;
                 } else if (r.type === 'Image') {
                     const fileName = content.split('/').pop();
-                    badge = `<span class="text-[8px] bg-purple-950 text-purple-400 px-1 py-0.5 rounded uppercase font-black cursor-pointer" onclick="openFileInDrawer('${fileName}')">Visual</span>`;
-                    content = `<div class="inline-flex items-center gap-2 group cursor-pointer mt-1" onclick="openFileInDrawer('${fileName}')">
+                    badge = '<span class="text-[8px] bg-purple-950 text-purple-400 px-1 py-0.5 rounded uppercase font-black">Visual</span>';
+                    content = `<div class="inline-flex items-center gap-2 group cursor-pointer mt-1" onclick="showImage('/media/${fileName}')">
                         <img src="/media/${fileName}" class="w-8 h-8 rounded border border-purple-500/30 object-cover opacity-80 group-hover:opacity-100 transition-opacity">
                         <span class="text-purple-400 text-[10px]">${fileName}</span>
                     </div>`;
                 } else if (r.type === 'Audio') {
-                    badge = `<span class="text-[8px] bg-rose-950 text-rose-400 px-1 py-0.5 rounded uppercase font-black cursor-pointer" onclick="openFileInDrawer('${content}')">Voice</span>`;
-                    content = `<audio controls src="/media/${encodeURIComponent(content)}" class="h-5 w-full opacity-60 hover:opacity-100 scale-90 origin-left"></audio>`;
+                    badge = '<span class="text-[8px] bg-rose-950 text-rose-400 px-1 py-0.5 rounded uppercase font-black">Voice</span>';
+                    // Fix: Use the extracted filename directly for the source URL to avoid path issues
+                    const fileName = content.split('/').pop();
+                    content = `<audio controls src="/media/${encodeURIComponent(fileName)}" class="h-5 w-full opacity-60 hover:opacity-100 scale-90 origin-left"></audio>`;
                 }
                 return `<div class="task-node text-slate-400 flex flex-col items-start leading-tight">
                     <div class="flex items-center gap-2 mb-0.5">${badge || '<div class="w-1 h-1 rounded-full bg-slate-700"></div>'}</div>
@@ -398,8 +400,20 @@
         function renderSession(sessionId) {
             let hash = 0; for (let i = 0; i < sessionId.length; i++) hash = sessionId.charCodeAt(i) + ((hash << 5) - hash);
             const colors = ['text-sky-400', 'text-rose-400', 'text-violet-400', 'text-cyan-400', 'text-emerald-400'];
-            return `<div class="flex items-center gap-1 cursor-pointer group" onclick="openSessionDrawer('${sessionId}')">
-                <span class="${colors[Math.abs(hash) % colors.length]} font-bold text-[11px]">..${sessionId.slice(-4)}</span>
+            
+            // Icon Identity
+            let icon = sessionId.includes('@') ? '📱' : '#';
+            if (sessionId.startsWith('lark')) icon = '🐦'; // Lark/Feishu icon
+            
+            // Middle Truncation
+            let display = sessionId;
+            if (sessionId.length > 12) {
+                display = `${sessionId.slice(0, 4)}...${sessionId.slice(-4)}`;
+            }
+
+            return `<div class="flex items-center gap-1.5 cursor-pointer group" onclick="openSessionDrawer('${sessionId}')" title="${sessionId}">
+                <span class="text-slate-600 text-[10px] opacity-70">${icon}</span>
+                <span class="${colors[Math.abs(hash) % colors.length]} font-bold text-[11px] tracking-tight group-hover:underline decoration-dashed underline-offset-4">${display}</span>
             </div>`;
         }
 
