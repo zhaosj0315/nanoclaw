@@ -182,6 +182,8 @@ export function getNewMessages(jids: string[], lastTimestamp: string, assistantN
     WHERE chat_jid IN (${placeholders}) 
     AND timestamp > ? 
     AND content NOT LIKE ?
+    AND content NOT LIKE '🐾%'
+    AND content NOT LIKE '📦%'
     ORDER BY timestamp ASC
   `).all(...jids, lastTimestamp, `${assistantName}:%`) as any[];
 

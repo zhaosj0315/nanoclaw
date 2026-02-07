@@ -76,7 +76,10 @@
                 let content = r.content;
                 let badge = '';
                 
-                if (r.type === 'File') {
+                if (content.startsWith('[Status]')) {
+                    badge = '<span class="text-xs bg-slate-700 text-slate-400 px-1 rounded mr-1">STEP</span>';
+                    content = content.replace('[Status]', '').trim();
+                } else if (r.type === 'File') {
                     badge = '<span class="text-xs bg-blue-900 text-blue-200 px-1 rounded mr-1">FILE</span>';
                 } else if (r.type === 'Image') {
                     badge = '<span class="text-xs bg-purple-900 text-purple-200 px-1 rounded mr-1">IMG</span>';
@@ -87,8 +90,8 @@
                 }
 
                 // Truncate long text
-                if (content.length > 100) {
-                    content = content.substring(0, 100) + '...';
+                if (content.length > 200) {
+                    content = content.substring(0, 197) + '...';
                 }
 
                 return `<div class="py-1 border-b border-gray-700 last:border-0 border-dashed text-gray-300 text-xs font-mono">

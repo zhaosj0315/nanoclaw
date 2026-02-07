@@ -292,8 +292,8 @@ async function processMessage(msg: NewMessage): Promise<void> {
   if (!group) return;
 
   // 关键修复：允许处理 from_me 消息（支持私聊），但严格排除助手发出的内容
-  // 排除：以 🐾 开头的消息（包括新的多媒体占位符）或以助手名开头的文本
-  if (msg.from_me && (msg.content.startsWith('🐾') || msg.content.startsWith(`${ASSISTANT_NAME}:`))) {
+  // 排除：以 🐾 或 📦 开头的消息（包括新的多媒体占位符）或以助手名开头的文本
+  if (msg.from_me && (msg.content.startsWith('🐾') || msg.content.startsWith('📦') || msg.content.startsWith(`${ASSISTANT_NAME}:`))) {
     return;
   }
 
@@ -685,6 +685,7 @@ async function runAgent(
         `──────────────────`,
         { quoted: quotedMsg }
       );
+      if (parentId) addInteractionResponse(parentId, 'Text', `[Status] ${statusUpdate}`);
 
       // 组装结果反馈给 Gemini
       const observerOutput = results
