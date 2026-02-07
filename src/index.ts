@@ -1481,6 +1481,8 @@ async function main(): Promise<void> {
   larkConnector = new LarkConnector(async (msg) => {
     // 统一逻辑：连接器只负责“写入数据库”和“下载附件”
     // 处理逻辑由中央 messageLoop 统一调度，实现多端功能完全同步
+    logger.info({ id: msg.id, chat: msg.chat_jid }, 'Lark message received and queuing for processing');
+    
     storeGenericMessage({
       id: msg.id,
       chat_jid: msg.chat_jid,
@@ -1499,8 +1501,9 @@ async function main(): Promise<void> {
             trigger: `@${ASSISTANT_NAME}`,
             added_at: new Date().toISOString()
         };
+        // 关键：立即持久化注册状态，确保 Loop 能读取到新的 JID
+        saveJson(path.join(DATA_DIR, 'registered_groups.json'), registeredGroups);
     }
-    // 注意：不再此处直接调用 processMessage，让其进入数据库队列由 Loop 处理
   });
   larkConnector.start().catch(err => logger.error({ err }, 'Failed to start Lark connector'));
 
