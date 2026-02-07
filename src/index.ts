@@ -83,41 +83,61 @@ let chatMenuState: Record<string, MenuState> = {};
 
 /**
  * Acquire a lock file to prevent multiple instances.
+ * 使用原子性操作和多重检查确保系统单实例运行。
  */
 function acquireLock(): void {
   fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (fs.existsSync(PID_FILE)) {
-    const pid = parseInt(fs.readFileSync(PID_FILE, 'utf-8'), 10);
+  
+  const tryAcquire = () => {
     try {
-      // Check if process is still running
-      process.kill(pid, 0);
-      logger.error({ pid }, 'Another instance of NanoClaw is already running');
-      process.exit(1);
+      // wx 标志确保原子性：如果文件已存在则抛出异常
+      fs.writeFileSync(PID_FILE, process.pid.toString(), { flag: 'wx' });
+      return true;
     } catch (err: any) {
-      if (err.code === 'EPERM') {
-        logger.error({ pid }, 'Another instance of NanoClaw is already running (EPERM)');
-        process.exit(1);
+      if (err.code === 'EEXIST') {
+        const existingPid = parseInt(fs.readFileSync(PID_FILE, 'utf-8'), 10);
+        try {
+          process.kill(existingPid, 0); // 检查进程是否真的还活着
+          logger.error({ existingPid }, 'FATAL: Another instance of NanoClaw is already running.');
+          console.error(`\n[CRITICAL LOCK ERROR] Instance detected (PID ${existingPid}).`);
+          console.error(`If you are sure it's not running, delete: ${PID_FILE}\n`);
+          process.exit(1);
+        } catch (e) {
+          // 进程已死，但锁文件残留
+          logger.warn({ existingPid }, 'Removing stale PID lock file');
+          try { fs.unlinkSync(PID_FILE); } catch (u) {}
+          return false; // 重试
+        }
       }
-      // Process not running, stale lock file
-      logger.warn({ pid, code: err.code }, 'Removing stale lock file');
-      try {
-        fs.unlinkSync(PID_FILE);
-      } catch (e) {
-        // Ignore errors during unlink if file already gone
-      }
+      throw err;
     }
-  }
-  fs.writeFileSync(PID_FILE, process.pid.toString());
+  };
 
-  // Ensure lock is released on exit
-  process.on('exit', () => releaseLock());
-  process.on('SIGINT', () => {
-    releaseLock();
+  // 尝试获取锁，如果是陈旧的锁则自动重试一次
+  if (!tryAcquire()) tryAcquire();
+
+  // 注册全局清理钩子
+  const cleanup = () => {
+    try {
+      if (fs.existsSync(PID_FILE)) {
+        const current = fs.readFileSync(PID_FILE, 'utf-8');
+        if (current === process.pid.toString()) {
+          fs.unlinkSync(PID_FILE);
+          logger.info('System lock released gracefully');
+        }
+      }
+    } catch (e) {}
     process.exit(0);
-  });
-  process.on('SIGTERM', () => {
-    releaseLock();
-    process.exit(0);
+  };
+
+  process.on('SIGINT', cleanup);
+  process.on('SIGTERM', cleanup);
+  process.on('exit', () => {
+    try {
+      if (fs.existsSync(PID_FILE) && fs.readFileSync(PID_FILE, 'utf-8') === process.pid.toString()) {
+        fs.unlinkSync(PID_FILE);
+      }
+    } catch (e) {}
   });
 }
 
