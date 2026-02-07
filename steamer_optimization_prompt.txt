@@ -1,7 +1,0 @@
-PROMPT FOR IMAGE GENERATION:
-"Hyper-realistic close-up of a high-tech industrial steamer stack, polished stainless steel, glowing quantum heating base, emitting clean white steam, digital holographic HUD displaying efficiency metrics, 8k resolution, cinematic lighting."
-
-OPTIMIZATION NOTES:
-- Enhanced material shaders for stainless steel.
-- Added 'Quantum' heating element visual indicators.
-- Overlayed efficiency metrics via HUD.
