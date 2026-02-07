@@ -385,16 +385,19 @@ async function processMessage(msg: NewMessage): Promise<void> {
   let logContent = content;
   const currentImage = path.join(DATA_DIR, 'media', `image_${msg.id}.jpg`);
   const currentVoice = path.join(DATA_DIR, 'media', `voice_${msg.id}.ogg`);
+  const currentAttachments: string[] = [];
   
   if (fs.existsSync(currentImage)) {
     logContent = (logContent || '') + ` [IMAGE: image_${msg.id}.jpg]`;
+    currentAttachments.push(currentImage);
   }
   if (fs.existsSync(currentVoice)) {
     logContent = (logContent || '') + ` [AUDIO: voice_${msg.id}.ogg]`;
+    currentAttachments.push(currentVoice);
   }
 
   // --- Log Interaction Start ---
-  createInteractionTask(msg.id, msg.chat_jid, logContent || '[Media Message]');
+  createInteractionTask(msg.id, msg.chat_jid, logContent || '[Media Message]', currentAttachments);
 
   // 关键优化：减少上下文深度，仅保留最近 15 条，防止 AI 纠缠历史话题
   const recentMessages = getRecentMessages(msg.chat_jid, 15);
@@ -613,7 +616,16 @@ async function runAgent(
 
     iterations++;
     try {
-      const result = await runLocalGemini(currentPrompt, group.name, mediaFiles);
+      // 构造媒体文件清单，帮助模型建立视觉/听觉数据与文件名的 1:1 映射
+      const mediaManifest = mediaFiles.map((f, i) => `[附件 ${i + 1}] 文件名: ${path.basename(f)} (路径: ${f})`).join('\n');
+      
+      const multimodalContext = mediaFiles.length > 0 
+        ? `--- 实时附件映射清单 ---\n${mediaManifest}\n\n系统说明：你当前收到了 ${mediaFiles.length} 个媒体文件作为原始输入。在下方的对话历史中，它们通过 [图片附件: 文件名] 或 [语音附件: 文件名] 的形式被引用。请务必根据清单中的文件名与附件序号的对应关系，精确分析对应的视觉/听觉内容。`
+        : '';
+
+      const finalPrompt = `${multimodalContext}\n\n${currentPrompt}`;
+
+      const result = await runLocalGemini(finalPrompt, group.name, mediaFiles);
 
       if (!result.success || !result.response) {
         logger.error(

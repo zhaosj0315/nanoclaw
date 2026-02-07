@@ -35,6 +35,7 @@ export interface InteractionTask {
   created_at: string;
   duration_ms?: number;
   token_usage?: { prompt: number; completion: number; total: number };
+  attachments?: string[];
 }
 
 export interface InteractionResponse {
@@ -101,7 +102,8 @@ export function initDatabase() {
       status TEXT,
       created_at DATETIME,
       duration_ms INTEGER,
-      token_usage TEXT
+      token_usage TEXT,
+      attachments TEXT
     );
     CREATE TABLE IF NOT EXISTS interaction_responses (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -294,12 +296,13 @@ export function getLastGroupSync(): string | undefined {
 
 // --- Interaction Log (Q&A Physics Binding) ---
 
-export function createInteractionTask(id: string, session_id: string, content: string) {
+export function createInteractionTask(id: string, session_id: string, content: string, attachments: string[] = []) {
+  const attachmentsStr = JSON.stringify(attachments);
   db.prepare(`
-    INSERT INTO interaction_tasks (id, session_id, content, status, created_at, duration_ms)
-    VALUES (?, ?, ?, 'PENDING', ?, NULL)
+    INSERT INTO interaction_tasks (id, session_id, content, status, created_at, duration_ms, token_usage, attachments)
+    VALUES (?, ?, ?, 'PENDING', ?, NULL, NULL, ?)
     ON CONFLICT(id) DO NOTHING
-  `).run(id, session_id, content, new Date().toISOString());
+  `).run(id, session_id, content, new Date().toISOString(), attachmentsStr);
 }
 
 export function completeInteractionTask(id: string, usage?: { prompt: number; completion: number; total: number }) {
@@ -370,10 +373,11 @@ export function getInteractionLog(limit = 50) {
     LIMIT ?
   `).all(limit) as any[];
 
-  // Parse token_usage JSON if present
-  const tasksWithParsedUsage = tasks.map(t => ({
+  // Parse JSON fields
+  const tasksWithParsedData = tasks.map(t => ({
     ...t,
-    token_usage: t.token_usage ? JSON.parse(t.token_usage) : null
+    token_usage: t.token_usage ? JSON.parse(t.token_usage) : null,
+    attachments: t.attachments ? JSON.parse(t.attachments) : []
   }));
 
   const taskIds = tasks.map(t => t.id);
@@ -387,7 +391,7 @@ export function getInteractionLog(limit = 50) {
   `).all(...taskIds) as InteractionResponse[];
 
   // Group responses by task
-  const result = tasksWithParsedUsage.map(task => ({
+  const result = tasksWithParsedData.map(task => ({
     ...task,
     responses: responses.filter(r => r.parent_id === task.id)
   }));
