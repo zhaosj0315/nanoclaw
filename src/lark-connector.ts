@@ -30,7 +30,8 @@ export class LarkConnector {
 
         const messageId = message.message_id;
         const msgType = (message as any).msg_type;
-        const chatId = message.chat_id.trim();
+        // Aggressively clean chat_id: remove all whitespace to prevent JID mismatches
+        const chatId = message.chat_id.replace(/\s+/g, '');
         let content = '';
         let attachments: string[] = [];
 
