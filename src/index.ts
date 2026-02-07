@@ -429,10 +429,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
     // 语音处理
     if (fs.existsSync(voicePath)) {
       const fileName = `voice_${m.id}.ogg`;
-      if (!isBotResponse) {
-        hasUserAudio = true;
-        activeMediaFiles.push(voicePath);
-      }
+      // 历史语音仅保留文本引用，不再加入 activeMediaFiles，防止模型混淆当前焦点
       
       let analysis;
       if (fs.existsSync(analysisCachePath)) {
@@ -445,7 +442,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
         }
       }
 
-      const attachmentTag = `\n[语音附件: ${fileName}]`;
+      const attachmentTag = `\n[历史语音: ${fileName}]`;
       if (analysis) {
         cleanContent += `${attachmentTag}\n(系统多模态预分析: ${analysis.description})`;
       } else {
@@ -456,7 +453,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
     // 图片处理
     if (fs.existsSync(imagePath)) {
       const fileName = `image_${m.id}.jpg`;
-      if (!isBotResponse) activeMediaFiles.push(imagePath);
+      // 历史图片仅保留文本引用，不再加入 activeMediaFiles，防止模型混淆当前焦点
 
       let analysis;
       if (fs.existsSync(analysisCachePath)) {
@@ -469,7 +466,7 @@ async function processMessage(msg: NewMessage): Promise<void> {
         }
       }
 
-      const attachmentTag = `\n[图片附件: ${fileName}]`;
+      const attachmentTag = `\n[历史图片: ${fileName}]`;
       if (analysis) {
         cleanContent += `${attachmentTag}\n(系统视觉扫描结果: ${analysis.description})`;
       } else {
@@ -481,7 +478,10 @@ async function processMessage(msg: NewMessage): Promise<void> {
   }));
 
   // 限制媒体文件数量，避免 API 负载过重（仅取最近的 3 个）
-  const finalMediaFiles = activeMediaFiles.slice(-3);
+  // 关键修正：为了彻底解决“幻觉”问题，我们不再向 CLI 传递任何历史媒体文件。
+  // 只有当前这条消息包含的附件（currentAttachments）才会被物理传给 Gemini。
+  // 历史图片仅在 Prompt 文本中保留引用标记。
+  const finalMediaFiles = currentAttachments; 
 
   const historyContext = enhancedHistory.join('\n');
 
