@@ -70,14 +70,19 @@ app.get('/api/log', (req, res) => {
         const { tasks, total } = getInteractionLog(limit, offset);
         const stats = getDailyStats() || { total_tasks: 0, total_tokens: 0, avg_duration: 0 };
         
-        // 极致兼容的访问者 IP 捕捉
+        // 计算意图分类热图
+        const categoryStats = tasks.reduce((acc: any, t: any) => {
+            const cat = t.intent_category || 'GENERAL';
+            acc[cat] = (acc[cat] || 0) + 1;
+            return acc;
+        }, {});
+
+        // 捕获访问者 IP
         let visitorIp = '127.0.0.1';
         try {
             visitorIp = (req.headers['x-forwarded-for'] as string) || req.ip || req.socket.remoteAddress || '127.0.0.1';
             if (visitorIp.includes('::ffff:')) visitorIp = visitorIp.replace('::ffff:', '');
-        } catch (ipErr) {
-            logger.debug('Visitor IP resolution failed');
-        }
+        } catch (ipErr) {}
         
         res.json({ 
             log: tasks, 
@@ -86,12 +91,34 @@ app.get('/api/log', (req, res) => {
             limit,
             stats: { 
                 ...stats, 
-                visitor_ip: visitorIp 
+                visitor_ip: visitorIp,
+                categories: categoryStats
             } 
         });
     } catch (err) {
         logger.error({ err }, 'Critical failure in /api/log');
-        res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', detail: (err as Error).message });
+        res.status(500).json({ error: 'INTERNAL_SERVER_ERROR' });
+    }
+});
+
+app.post('/api/fix', (req, res) => {
+    const { id } = req.body;
+    const task = getInteractionTask(id);
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+
+    try {
+        const newId = `fix-${Date.now()}`;
+        storeGenericMessage({
+            id: newId,
+            chat_jid: task.session_id,
+            sender_jid: task.session_id,
+            content: `[SYSTEM_FIX] 用户反馈你刚才的回复中缺失了必要的附件或操作。请核对指令 "${task.content}"，并立即补发缺失的文件、图片或音频。不要重复文字说明，直接调用工具。`,
+            timestamp: new Date().toISOString(),
+            from_me: false
+        });
+        res.json({ success: true, newId });
+    } catch (err) {
+        res.status(500).json({ error: 'Fix initiation failed' });
     }
 });
 
