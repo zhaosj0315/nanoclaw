@@ -1,24 +1,27 @@
 # Project Summary
-NanoClaw 是一个集成 WhatsApp 与 Gemini CLI 的智能助手系统。
+NanoClaw 已进化为 **"Tactical 3.5"** —— 一个工业级的、具备全链路审计能力的自治多模态 AI 中枢。
 
-**Last Updated**: 2026-02-06
+**Last Updated**: 2026-02-07 (Tactical Update)
 
-## 当前状态
-- **已注册群组**: 1 个 (Main)
-- **活动会话**: 0 个
-- **主要配置**: 
-  - 手机号: 8617600663150
-  - 存储目录: `/Users/zhaosj/Desktop/nanoclaw`
+## 🌟 核心里程碑
+1.  **统一通信中枢 (Unified Pipeline)**: 
+    - 成功打通 **WhatsApp** 与 **Lark (飞书)** 双链路。
+    - 实现了 `Message Store` -> `Central Loop` 的解耦架构，任何新 IM 接入只需 50 行代码。
+2.  **战术审计看板 (Dashboard 3.5)**:
+    - **可视化**: 实现了 "Golden Ratio" 布局与深色战术风格。
+    - **可交互**: 文件侧边栏预览、音频内嵌播放、图片热预览。
+    - **可追溯**: 建立了 `Question` -> `Physical Path` -> `Answer` 的像素级追溯链。
+    - **可干预**: 实装了 `RETRY` (一键重试) 与 `Phantom Detection` (意图缺失告警)。
+3.  **多模态防幻觉 (Anti-Hallucination)**:
+    - 实施了 **"Media Manifest" (附件清单)** 策略，强行锁定 AI 的视觉焦点。
+    - 物理隔离历史图片，杜绝 "张冠李戴"。
 
-## 核心功能
-- **WhatsApp 自动化**: 基于 Baileys 协议的实时消息收发。
-- **Gemini 驱动**: 本地调用 Gemini 模型进行逻辑推理。
-- **多模态支持**: 图片视觉分析与语音转文字/文字转语音。
-- **安全沙箱**: 基于白名单的文件系统访问控制。
+## 📊 系统状态
+- **接入端**: WhatsApp (Stable), Lark (Stable, Long-Connection)
+- **附件支持**: Image, Audio, Video, PDF/Doc (全自动下载与路由)
+- **运行环境**: macOS (M4 Max Optimized)
+- **Token 消耗**: 实时监控中 (见 Dashboard 顶部)
 
-## 研究与仿真 (Research & Simulation)
-项目根目录包含大量用于特定任务的数据分析脚本：
-- **北京科技 (Beijing Tech)**: `generate_beijing_report.py` 等。
-- **普拉特县 (Platte County)**: `simulate_rejection_extremes.py`, `simulate_funding_vs_delay.py` 等。
-- **系统监控**: `generate_system_stats.py` 等。
-这些脚本由 AI 根据业务需求动态生成，用于生成报表和图表。
+## 🔮 下一步方向
+- **Codebase Indexing**: 增强对本地代码库的语义理解。
+- **More Tools**: 扩展更多系统级运维工具。

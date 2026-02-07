@@ -1,176 +1,121 @@
-# NanoClaw Specification (Gemini Edition)
+# NanoClaw Specification (Tactical v3.5)
 
-A high-agency personal assistant accessible via WhatsApp, powered by local Gemini integration and a regex-based tool execution engine.
-
----
-
-## Table of Contents
-
-1. [Architecture](#architecture)
-2. [Folder Structure](#folder-structure)
-3. [Configuration](#configuration)
-4. [Memory System](#memory-system)
-5. [Message Flow](#message-flow)
-6. [Tool System](#tool-system)
-7. [Security Model](#security-model)
+**Architecture Status**: Unified Pipeline (Lark/WhatsApp) with Web-based Tactical Dashboard.
 
 ---
 
-## Architecture
+## 1. System Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        HOST (macOS)                                  │
-│                   (Main Node.js Process)                             │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌──────────────┐                     ┌────────────────────┐        │
-│  │  WhatsApp    │────────────────────▶│   SQLite Database  │        │
-│  │  (baileys)   │◀────────────────────│   (nanoclaw.db)    │        │
-│  └──────────────┘   store/send        └─────────┬──────────┘        │
-│                                                  │                   │
-│         ┌────────────────────────────────────────┘                   │
-│         │                                                            │
-│         ▼                                                            │
-│  ┌──────────────────┐                                               │
-│  │  Message Loop    │◀─────────────────┐                            │
-│  │  (polls DB)      │                  │                            │
-│  └────────┬─────────┘                  │                            │
-│           │                            │                            │
-│           ▼                            │                            │
-│  ┌──────────────────┐        ┌──────────────────┐                   │
-│  │   Gemini Engine  │───────▶│   Tool Executor  │                   │
-│  │ (local-gemini.ts)│        │(tool-executor.ts)│                   │
-│  └──────────────────┘        └──────────────────┘                   │
-│                                        │                            │
-│                                        ▼                            │
-│                               ┌─────────────────┐                   │
-│                               │  FileSystem /   │                   │
-│                               │  Shell (Host)   │                   │
-│                               └─────────────────┘                   │
-└─────────────────────────────────────────────────────────────────────┘
+The system has evolved from a simple WhatsApp bot to a dual-interface autonomous agent platform.
+
+```mermaid
+graph TD
+    User_WA[WhatsApp User] -->|Baileys| WA_Connector
+    User_Lark[Lark User] -->|WS Client| Lark_Connector
+    
+    subgraph "Ingestion Layer"
+        WA_Connector -->|Store Msg + DL Media| DB[(SQLite: messages)]
+        Lark_Connector -->|Store Msg + DL Media| DB
+    end
+    
+    subgraph "Core Loop (The Brain)"
+        DB -->|Poll 5s| Scheduler[Task Scheduler]
+        Scheduler -->|New Msg| Processor[Message Processor]
+        
+        Processor -->|1. Build Context| History[Recent Msgs (Limit 1)]
+        Processor -->|2. Build Manifest| Manifest[Media Manifest]
+        
+        Manifest -->|3. Construct Prompt| Gemini[Gemini CLI]
+        Gemini -->|4. Tool Calls| Tools[Tool Executor]
+        
+        Tools -->|Files/Shell| FileSystem
+        Tools -->|Reply| Outbound[Unified Sender]
+    end
+    
+    subgraph "Audit Layer (Tactical Dashboard)"
+        DB -->|Sync| InteractionLog[Interaction Tables]
+        InteractionLog -->|API| WebUI[Dashboard 3.5]
+        WebUI -->|Action: Retry| API_Retry[Retry Endpoint]
+        API_Retry -->|Inject| DB
+    end
 ```
 
-### Core Components
-
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| **WhatsApp Core** | `@whiskeysockets/baileys` | Connects to WhatsApp Web API. |
-| **Brain** | Google Gemini (via CLI/API) | Generates responses and tool calls. |
-| **Tool Executor** | Regex Parser | Extracts commands like `[SHELL:...]` from AI output and executes them. |
-| **Memory** | SQLite + JSON | Stores conversation history (`messages`) and persistent facts (`memories`). |
-| **Multimodal** | FFmpeg | Pre-processes voice (`.ogg`) and images for the AI. |
+### 1.1 Unified Pipeline Principle
+- **Normalization**: All JIDs are sanitized (`replace(/[^\w]/g, '')`) before storage.
+- **Storage-First**: Connectors DO NOT trigger logic. They only dump data into `messages` and `data/media`.
+- **Central Loop**: A single `startMessageLoop` consumes from the DB, ensuring consistent behavior across platforms.
 
 ---
 
-## Folder Structure
+## 2. Tactical Dashboard (Audit System)
 
+A React-less, high-performance HTML/JS dashboard serving at `http://localhost:3000`.
+
+### 2.1 Core Features
+- **Visual Traceability**: 
+  - `Question` column renders thumbnails (`[IMG]`) and absolute paths.
+  - `Answer` column renders interactive media badges.
+- **Zero-Jump Preview**:
+  - **Drawer**: Slide-out panel for Markdown rendering and PDF embedding.
+  - **Audio**: Inline HTML5 player.
+  - **Image**: Hover preview + Modal full-view.
+- **Phantom Action Detection**:
+  - Compares User Intent (regex: "file", "image") vs. Agent Output.
+  - Flags mismatches with **RED TINT** and `WARN` badge.
+- **Metrics**:
+  - Real-time Token Usage (Prompt/Completion).
+  - Duration breakdown.
+
+---
+
+## 3. Multimodal Strategy (Anti-Hallucination)
+
+To prevent the model from analyzing historical images instead of new ones:
+
+### 3.1 Media Manifest
+Before every inference, the system generates a manifest block:
+```text
+【当前交互焦点：全新上传文件】
+用户刚刚上传了以下文件，请务必针对这些文件进行分析：
+- [附件 1] image_3B...jpg (/Users/.../data/media/...)
 ```
-nanoclaw/
-├── README.md                      # User documentation (System v2.5)
-├── package.json                   # Dependencies (v1.0.0)
-├── .env                           # Environment variables
-├── src/
-│   ├── index.ts                   # Main entry point & message loop
-│   ├── config.ts                  # Configuration constants
-│   ├── local-gemini.ts            # Interface to Gemini AI
-│   ├── tool-executor.ts           # Tool parsing and execution logic
-│   ├── db.ts                      # Database operations
-│   ├── media-analyzer.ts          # Multimodal processing
-│   ├── mount-security.ts          # Path authorization logic
-│   └── logger.ts                  # Logging utility
-├── data/
-│   ├── nanoclaw.db                # SQLite database
-│   ├── knowledge_base/            # RAG storage (text files)
-│   ├── media/                     # Downloaded voice/images
-│   └── router_state.json          # System state persistence
-├── store/
-│   └── auth/                      # WhatsApp session credentials
-├── groups/                        # Legacy/Container remnants (currently unused by Gemini core)
-└── logs/                          # Runtime logs
-```
+
+### 3.2 Physical Anchoring
+- **New Logic**: Only attachments from the *current* turn are passed to the CLI physical arguments.
+- **History Logic**: Attachments in history (past 3 turns) are converted to text-only tags (`[历史图片: xxx]`) so the model knows context but cannot "see" (and confuse) them.
 
 ---
 
-## Configuration
+## 4. Tool System
 
-Configuration is managed in `src/config.ts` and `.env`.
+Regex-based execution engine (`src/tool-executor.ts`).
 
-| Constant | Default | Purpose |
-|----------|---------|---------|
-| `ASSISTANT_NAME` | `zhaosj的助手` | Identity used for prompts and message prefixes. |
-| `POLL_INTERVAL` | `5000` (ms) | How often to check for new messages. |
-| `MOUNT_ALLOWLIST_PATH` | `~/.config/nanoclaw/mount-allowlist.json` | Security whitelist for file access. |
-
----
-
-## Memory System
-
-The system uses a hybrid memory approach:
-
-1.  **Conversation Context**: The last 15 messages are always injected into the prompt.
-2.  **Long-Term Memory (Facts)**:
-    *   Stored in `nanoclaw.db` (table: `memories`).
-    *   AI can "extract" facts from user messages (async process).
-    *   Relevant facts are injected into the system prompt.
-3.  **Knowledge Base (RAG)**:
-    *   Files ingested via `[INGEST_FILE]` are stored in `data/knowledge_base/`.
-    *   Retrieved via `[SEARCH_KNOWLEDGE]` tool.
+| Tool | Signature | Notes |
+| :--- | :--- | :--- |
+| **Shell** | `[SHELL: cmd]` | Restricted by `mount-security.ts`. |
+| **Write** | `[WRITE: path \| content]` | Overwrites files. |
+| **Send File** | `[SEND_FILE: path]` | Supports auto-detection of media type. |
+| **TTS** | `[TTS_SEND: text]` | Generates local `.aiff` -> `.ogg` conversion. |
+| **Knowledge** | `[SEARCH_KNOWLEDGE]` | (Legacy/Low Priority) |
 
 ---
 
-## Message Flow
+## 5. Data Schema Changes
 
-1.  **Receive**: `src/index.ts` listens for `messages.upsert` from WhatsApp.
-2.  **Filter**: Ignores messages unless they:
-    *   Start with trigger `@zhaosj的助手` (in groups).
-    *   Are in a private chat (DM).
-    *   Are from the "Main" control group.
-3.  **Pre-process**:
-    *   Downloads images/audio.
-    *   `src/media-analyzer.ts` generates text descriptions for media.
-4.  **Prompt Construction**:
-    *   Combines: System Prompt + Long-term Memories + Recent History (15 msgs).
-5.  **Inference**:
-    *   Sends prompt to `local-gemini.ts`.
-6.  **Tool Execution**:
-    *   If response contains `[TOOL:...]` patterns, `tool-executor.ts` runs them.
-    *   Output is fed back to Gemini for a follow-up response (Loop).
-7.  **Response**:
-    *   Final text is sent back to WhatsApp.
-    *   If `[TTS_SEND]` was used, sends audio.
+### `interaction_tasks`
+- **New Fields**:
+  - `duration_ms` (INT): Processing time.
+  - `token_usage` (JSON): `{prompt, completion, total}`.
+  - `attachments` (JSON Array): List of absolute paths for traceability.
+
+### `messages`
+- **Standardization**: 
+  - `chat_jid` is strictly formatted (e.g., `lark@oc_12345`, `8617...@s.whatsapp.net`).
 
 ---
 
-## Tool System
+## 6. Security
 
-The Gemini Agent uses a **Regex-based** tool protocol. The AI invokes tools by generating specific string patterns.
-
-| Tool Syntax | Description | Security |
-|-------------|-------------|----------|
-| `[SHELL: command]` | Executes bash command. | **Strict**: Checked against `mount-allowlist.json`. |
-| `[WRITE: path \| content]` | Writes file content. | **Strict**: Checked against `mount-allowlist.json`. |
-| `[SEND_FILE: path]` | Sends a file via WhatsApp. | **Strict**: Checks file existence & permission. |
-| `[TTS_SEND: text]` | Generates AI speech (macOS `say`) and sends OGG. | Safe (Output only). |
-| `[SEARCH_KNOWLEDGE: query]` | Greps the `data/knowledge_base` directory. | Read-only. |
-| `[LIST_KNOWLEDGE]` | Lists files in knowledge base. | Read-only. |
-| `[INGEST_FILE: path]` | Reads PDF/Doc/Code and saves to KB. | Checked against allowlist. |
-| `[SHOW_MENU: title \| op1 \| op2]`| Displays interactive buttons/menu. | UX only. |
-
-**Note**: The "Claude Agent SDK" tools (WebSearch, AgentBrowser) mentioned in previous specs are **NOT** available in this version. The system relies on standard shell commands (e.g., `curl`, `grep`) for external interactions.
-
----
-
-## Security Model
-
-### 1. Electronic Fence (Mount Security)
-To prevent the AI from destroying the host system, file access is restricted.
-*   **Default**: Only the project root directory is accessible.
-*   **Allowlist**: User must explicitly add external paths to `~/.config/nanoclaw/mount-allowlist.json`.
-
-### 2. Identity Check
-*   `process.env.HOME` is resolved to ensure absolute path checking.
-*   `..` traversal attempts in paths are blocked if they exit authorized roots.
-
-### 3. Kill Switch
-*   Sending `stop` or `🛑` immediately clears the message queue and interrupts the agent loop.
+- **Basic Auth**: Dashboard protected by `admin/admin` (configurable).
+- **Path Traversal**: Middleware blocks access to files outside `PROJECT_ROOT` unless allowed.
+- **Content Sanitization**: Lark JSON payloads are parsed with a "Nuclear Fallback" to ensure no message is dropped due to formatting errors.
