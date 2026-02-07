@@ -610,6 +610,15 @@ async function runAgent(
   const taskStartTime = Date.now(); // 记录任务开始时间
 
   let totalUsage = { prompt: 0, completion: 0, total: 0 };
+  let telemetry = { pre: 0, llm: 0, post: 0 };
+  
+  // 意图预识别
+  let intentCategory = 'GENERAL';
+  const lowerPrompt = initialPrompt.toLowerCase();
+  if (lowerPrompt.includes('画') || lowerPrompt.includes('image')) intentCategory = 'VISUAL_GEN';
+  else if (lowerPrompt.includes('分析') || lowerPrompt.includes('分析图')) intentCategory = 'DATA_ANALYSIS';
+  else if (lowerPrompt.includes('语音') || lowerPrompt.includes('voice')) intentCategory = 'VOICE_GEN';
+  else if (lowerPrompt.includes('总结') || lowerPrompt.includes('read')) intentCategory = 'DOC_SUMMARY';
 
   while (iterations < MAX_ITERATIONS) {
     // 检查是否有在此任务开始之后发出的中断指令
@@ -621,6 +630,7 @@ async function runAgent(
 
     iterations++;
     try {
+      const preStart = Date.now();
       // 构造媒体文件清单，帮助模型建立视觉/听觉数据与文件名的 1:1 映射
       const mediaManifest = mediaFiles.map((f, i) => `[附件 ${i + 1}] 名称: ${path.basename(f)} (绝对路径: ${f})`).join('\n');
       
@@ -636,8 +646,11 @@ async function runAgent(
       const finalPrompt = multimodalSystemInstruction 
         ? `${multimodalSystemInstruction}\n\n${currentPrompt}`
         : currentPrompt;
+      telemetry.pre += (Date.now() - preStart);
 
+      const llmStart = Date.now();
       const result = await runLocalGemini(finalPrompt, group.name, mediaFiles);
+      telemetry.llm += (Date.now() - llmStart);
 
       if (!result.success || !result.response) {
         logger.error(
@@ -656,6 +669,7 @@ async function runAgent(
       const responseText = result.response;
       logger.info({ iterations, responseText }, 'Gemini thinking process');
       
+      const postStart = Date.now();
       // 检查是否有工具调用
       const { results, commands } = await executeTools(responseText);
 
@@ -694,6 +708,7 @@ async function runAgent(
           };
         }
       }
+      telemetry.post += (Date.now() - postStart);
 
       if (results.length === 0 || menuShown || actionExecuted) {
         // 关键逻辑：如果是菜单展示或已执行了关键动作（发语音/发文件），直接熔断退出，严禁进入下一轮思考
@@ -750,7 +765,7 @@ async function runAgent(
     }
   }
 
-  if (parentId) completeInteractionTask(parentId, totalUsage);
+  if (parentId) completeInteractionTask(parentId, totalUsage, telemetry, intentCategory);
   if (finalResponse === '__MENU_SHOWN__' || finalResponse === '__SILENT_FINISH__') return '';
   return finalResponse || '任务执行超时或未给出明确答复。';
 }
