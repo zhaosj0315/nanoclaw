@@ -207,6 +207,16 @@
                         <span class="text-slate-500 uppercase font-black">Latency</span>
                         <span id="stat-latency" class="text-amber-400 font-mono">-</span>
                     </div>
+                    <div class="w-px bg-slate-800 self-stretch"></div>
+                    <div class="flex flex-col">
+                        <span class="text-slate-500 uppercase font-black">Avg_TPS</span>
+                        <span id="stat-tps" class="text-rose-400 font-mono">-</span>
+                    </div>
+                    <div class="w-px bg-slate-800 self-stretch"></div>
+                    <div class="flex flex-col">
+                        <span class="text-slate-500 uppercase font-black">Audit_Node</span>
+                        <span id="visitor-node" class="text-indigo-400 font-mono">-</span>
+                    </div>
                 </div>
                 <div id="status-indicator" class="text-[10px] text-slate-600 font-mono tracking-widest uppercase">Initializing...</div>
             </div>
@@ -221,6 +231,7 @@
                             <th class="px-3 py-2 w-[110px] min-w-[110px] font-black">Status</th>
                             <th class="px-3 py-2 w-[80px] min-w-[80px] font-black">Metrics</th>
                             <th class="px-3 py-2 w-[120px] min-w-[120px] font-black">Session</th>
+                            <th class="px-3 py-2 w-[140px] min-w-[140px] font-black">Origin</th>
                             <th class="px-3 py-2 w-[20%] font-black">Question</th>
                             <th class="px-3 py-2 font-black">Answer / Tactical Actions</th>
                         </tr>
@@ -272,30 +283,36 @@
             renderCurrentData(); 
         }
 
-        async function openFileInDrawer(filename) {
+        async function openFileInDrawer(encodedFilename) {
+            const filename = decodeURIComponent(encodedFilename);
             drawerTitle.textContent = `PREVIEW: ${filename}`;
             drawerContent.innerHTML = '<div class="text-slate-500 animate-pulse">Loading_Content...</div>';
             drawer.classList.add('open');
             
             try {
-                const url = `/media/${filename}`;
+                const url = `/media/${encodeURIComponent(filename)}?t=${Date.now()}`;
                 const lowerName = filename.toLowerCase();
                 
                 if (lowerName.endsWith('.pdf')) {
-                    drawerContent.innerHTML = `<iframe src="${url}" class="w-full h-full border-0 rounded" title="${filename}"></iframe>`;
+                    drawerContent.innerHTML = `<iframe src="${url}" class="w-full h-full border-0 rounded bg-white" title="${filename}"></iframe>`;
                 } else if (lowerName.match(/\.(png|jpg|jpeg|gif|webp)$/)) {
                     drawerContent.innerHTML = `<div class="flex flex-col items-center gap-4">
-                        <img src="${url}" class="max-w-full rounded shadow-lg border border-slate-800">
-                        <div class="text-[10px] text-slate-500 font-mono">${filename}</div>
+                        <img src="${url}" class="max-w-full rounded shadow-lg border border-slate-800 cursor-zoom-in" onclick="showImage('${url}')">
+                        <div class="flex gap-2">
+                            <a href="${url}" download class="text-[10px] bg-slate-800 px-2 py-1 rounded hover:bg-slate-700">DOWNLOAD</a>
+                            <button onclick="openFileInDrawer('${encodeURIComponent(filename)}')" class="text-[10px] bg-slate-800 px-2 py-1 rounded hover:bg-slate-700">RELOAD</button>
+                        </div>
                     </div>`;
-                } else if (lowerName.match(/\.(ogg|mp3|wav)$/)) {
+                } else if (lowerName.match(/\.(ogg|mp3|wav|opus)$/)) {
                     drawerContent.innerHTML = `<div class="flex flex-col items-center justify-center h-64 gap-6 bg-slate-900/30 rounded-xl border border-slate-800">
-                        <div class="text-4xl">🔊</div>
-                        <audio controls autoplay src="${url}" class="w-64"></audio>
-                        <div class="text-[10px] text-slate-500 font-mono">${filename}</div>
+                        <div class="text-4xl status-breathe">🔊</div>
+                        <audio id="drawer-audio" controls autoplay src="${url}" class="w-64" onrunning="console.log('Audio playing')" onerror="handleAudioError(this)"></audio>
+                        <div id="audio-status" class="text-[10px] text-slate-500 font-mono">${filename}</div>
+                        <button onclick="openFileInDrawer('${encodeURIComponent(filename)}')" class="text-[9px] border border-slate-700 px-3 py-1 rounded-full hover:bg-slate-800 transition-all">FORCE_RELOAD_BUFFER</button>
                     </div>`;
                 } else {
                     const res = await fetch(url);
+                    if (!res.ok) throw new Error(`HTTP_${res.status}`);
                     const text = await res.text();
                     if (lowerName.endsWith('.md')) {
                         drawerContent.innerHTML = marked.parse(text);
@@ -304,8 +321,47 @@
                     }
                 }
             } catch (e) {
-                drawerContent.innerHTML = `<div class="text-red-500 font-bold">FAILED_TO_LOAD_FILE</div><div class="text-slate-600 text-xs mt-2">${e.message}</div>`;
+                drawerContent.innerHTML = `<div class="text-red-500 font-bold uppercase">FAILED_TO_LOAD_ASSET</div><div class="text-slate-600 text-[10px] mt-2 font-mono">${e.message}</div>
+                <button onclick="openFileInDrawer('${encodeURIComponent(filename)}')" class="mt-4 text-[10px] bg-red-900/20 text-red-400 border border-red-900/50 px-4 py-2 rounded">RETRY_CONNECTION</button>`;
             }
+        }
+
+        function handleAudioError(el) {
+            console.error('Audio load error', el.error);
+            document.getElementById('audio-status').innerHTML = `<span class="text-red-500">LOAD_ERROR: ${el.error?.message || 'MEDIA_UNSUPPORTED_OR_404'}</span>`;
+        }
+
+        function openSessionDrawer(sessionId) {
+            drawerTitle.textContent = `SESSION_PROFILE: ${sessionId}`;
+            const sessionTasks = lastData.log.filter(t => t.session_id === sessionId);
+            const successRate = ((sessionTasks.filter(t => t.status === 'RESOLVED').length / sessionTasks.length) * 100).toFixed(0);
+            
+            drawerContent.innerHTML = `
+                <div class="space-y-6">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="bg-slate-900/80 p-4 rounded border border-slate-800">
+                            <div class="text-[10px] text-slate-500 uppercase font-black mb-1">Total_Tasks</div>
+                            <div class="text-2xl font-bold text-emerald-400">${sessionTasks.length}</div>
+                        </div>
+                        <div class="bg-slate-900/80 p-4 rounded border border-slate-800">
+                            <div class="text-[10px] text-slate-500 uppercase font-black mb-1">Success_Rate</div>
+                            <div class="text-2xl font-bold text-sky-400">${successRate}%</div>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-[10px] text-slate-500 uppercase font-black mb-3 tracking-widest">Recent_Activity</h3>
+                        <div class="space-y-2">
+                            ${sessionTasks.slice(0, 5).map(t => `
+                                <div class="text-[11px] p-2 bg-slate-950/50 rounded border border-slate-800/50">
+                                    <div class="text-slate-500 mb-1">${formatTime(t.created_at)}</div>
+                                    <div class="text-slate-300 line-clamp-2">${t.content}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+            drawer.classList.add('open');
         }
 
         function closeDrawer() { drawer.classList.remove('open'); }
@@ -330,9 +386,9 @@
         function getStatusBadge(status, hasWarning, id) {
             let badge = '';
             if (status === 'PENDING') {
-                badge = `<div class="status-breathe inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-950/50 text-amber-400 border border-amber-800/50 text-[9px] font-black uppercase w-full justify-center">RUN</div>`;
+                badge = `<div class="status-breathe inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-950/50 text-amber-400 border border-amber-800/50 text-[9px] font-black uppercase w-full justify-center text-center">RUN</div>`;
             } else if (hasWarning) {
-                badge = `<div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-red-950/50 text-red-400 border border-red-800/50 text-[9px] font-black uppercase w-full justify-center">WARN</div>`;
+                badge = `<div class="status-breathe inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-red-950 text-white border border-red-500 text-[9px] font-black uppercase w-full justify-center shadow-[0_0_10px_rgba(239,68,68,0.5)]">MISSING</div>`;
             } else {
                 badge = `<div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-950/50 text-emerald-400 border border-emerald-800/50 text-[9px] font-black uppercase w-full justify-center">DONE</div>`;
             }
@@ -344,17 +400,23 @@
 
         function getDurationBadge(ms, usage, hasWarning) {
             if (!ms) return '<span class="text-slate-700">-</span>';
-            const sec = (ms / 1000).toFixed(1) + 's';
+            const sec = (ms / 1000).toFixed(1);
             let colorClass = 'text-emerald-400';
             if (ms > 15000) colorClass = 'text-amber-400';
             if (ms > 30000) colorClass = 'text-red-400 font-black';
             
-            let tokenInfo = usage ? `<span class="text-slate-500 text-[9px] font-mono">${(usage.total / 1000).toFixed(1)}k tok</span>` : '<span class="text-slate-700">-</span>';
+            let tps = '';
+            if (usage && usage.completion > 0) {
+                const rate = (usage.completion / (ms / 1000)).toFixed(1);
+                tps = `<span class="text-[8px] bg-slate-800 text-slate-500 px-1 rounded ml-1 font-mono">${rate} TPS</span>`;
+            }
+
+            let tokenInfo = usage ? `<span class="text-slate-500 text-[9px] font-mono">${(usage.total / 1000).toFixed(1)}k tok${tps}</span>` : '<span class="text-slate-700">-</span>';
             let phantomIndicator = hasWarning ? `<div class="mt-1 w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.8)]" title="PHANTOM_ACTION_DETECTED"></div>` : '';
 
             return `<div class="flex flex-col items-start leading-none gap-1">
                 <div class="flex items-center gap-2">
-                    <span class="${colorClass} tabular-nums font-bold text-[11px]">${sec}</span>
+                    <span class="${colorClass} tabular-nums font-bold text-[11px]">${sec}s</span>
                     ${phantomIndicator}
                 </div>
                 ${tokenInfo}
@@ -457,6 +519,12 @@
                     <td class="px-3 py-3 align-top">${getStatusBadge(t.status, hasWarning, t.id)}</td>
                     <td class="px-3 py-3 align-top">${getDurationBadge(t.duration_ms, t.token_usage, hasWarning)}</td>
                     <td class="px-3 py-3 align-top">${renderSession(t.session_id)}</td>
+                    <td class="px-3 py-3 align-top">
+                        <div class="flex flex-col gap-0.5">
+                            <span class="text-slate-400 font-mono text-[10px]">${t.origin_ip || 'NODE_LOCAL'}</span>
+                            <span class="text-[9px] text-indigo-500/70 font-black uppercase tracking-tighter">${geoCache.get(t.origin_ip) || 'RESOLVING...'}</span>
+                        </div>
+                    </td>
                     <td class="px-3 py-3 align-top text-slate-300 w-[20%]"><div class="line-clamp-3 text-[11px]">${renderQuestion(t.content, t.attachments)}</div></td>
                     <td class="px-3 py-3 align-top w-[60%]">${renderResponses(t.responses, t.attachments)}</td></tr>`;
             }).join('');
@@ -467,6 +535,33 @@
                 const res = await fetch('/api/log');
                 if (res.status === 401) { window.location.reload(); return; }
                 lastData = await res.json();
+                
+                const { stats, log } = lastData;
+                
+                // Visitor IP Tracking
+                if (stats && stats.visitor_ip) {
+                    const geo = await getGeo(stats.visitor_ip);
+                    const el = document.getElementById('visitor-node');
+                    if (el) el.textContent = `${stats.visitor_ip} (${geo})`;
+                }
+
+                if (stats) {
+                    document.getElementById('daily-stats').classList.remove('hidden');
+                    document.getElementById('stat-tasks').textContent = stats.total_tasks;
+                    document.getElementById('stat-tokens').textContent = stats.total_tokens.toLocaleString();
+                    document.getElementById('stat-latency').textContent = (stats.avg_duration / 1000).toFixed(1) + 's';
+                    
+                    // Global TPS Calculation
+                    const resolvedWithTokens = log.filter(t => t.status === 'RESOLVED' && t.token_usage && t.duration_ms > 0);
+                    if (resolvedWithTokens.length > 0) {
+                        const totalTokens = resolvedWithTokens.reduce((sum, t) => sum + t.token_usage.completion, 0);
+                        const totalMs = resolvedWithTokens.reduce((sum, t) => sum + t.duration_ms, 0);
+                        const avgTps = (totalTokens / (totalMs / 1000)).toFixed(1);
+                        const tpsEl = document.getElementById('stat-tps');
+                        if (tpsEl) tpsEl.textContent = `${avgTps} TPS`;
+                    }
+                }
+
                 statusIndicator.textContent = `FEED_SYNCED: ${new Date().toLocaleTimeString()}`;
                 renderCurrentData();
             } catch (e) { statusIndicator.textContent = 'LINK_OFFLINE'; }

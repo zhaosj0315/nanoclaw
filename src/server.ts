@@ -28,19 +28,37 @@ app.use(auth);
 // Serve static files from 'public' directory
 app.use(express.static(path.join(process.cwd(), 'public')));
 
-// Serve media files safely with fallback to root
-app.use('/media/:filename', (req, res) => {
+// Serve media files with correct MIME types and fallback
+app.get('/media/:filename', (req, res) => {
     const filename = req.params.filename;
     const mediaPath = path.join(DATA_DIR, 'media', filename);
+    const ttsPath = path.join(DATA_DIR, 'tts', filename);
     const rootPath = path.join(process.cwd(), filename);
+    
+    // 按优先级搜索目录
+    let targetPath = null;
+    if (fs.existsSync(mediaPath)) targetPath = mediaPath;
+    else if (fs.existsSync(ttsPath)) targetPath = ttsPath;
+    else if (fs.existsSync(rootPath)) targetPath = rootPath;
 
-    if (fs.existsSync(mediaPath)) {
-        res.sendFile(mediaPath);
-    } else if (fs.existsSync(rootPath)) {
-        res.sendFile(rootPath);
-    } else {
-        res.status(404).send('File not found');
+    if (!targetPath) {
+        return res.status(404).send('File not found');
     }
+
+    const ext = path.extname(filename).toLowerCase();
+    
+    // 关键修复：显式设置音频 MIME 类型，解决 Safari/macOS 兼容性问题
+    if (ext === '.ogg' || ext === '.opus') {
+        res.setHeader('Content-Type', 'audio/ogg; codecs=opus');
+    } else if (ext === '.mp3') {
+        res.setHeader('Content-Type', 'audio/mpeg');
+    } else if (ext === '.wav') {
+        res.setHeader('Content-Type', 'audio/wav');
+    } else if (ext === '.pdf') {
+        res.setHeader('Content-Type', 'application/pdf');
+    }
+
+    res.sendFile(targetPath);
 });
 
 app.get('/api/log', (req, res) => {
