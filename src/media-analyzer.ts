@@ -41,13 +41,25 @@ export async function analyzeMedia(filePath: string): Promise<MediaInfo | null> 
 
     // 2. 处理图片消息
     if (['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
-      logger.info('Analyzing Image metadata...');
+      logger.info('Analyzing Image via Native OCR...');
+      
+      let ocrText = '';
+      try {
+        // 调用 macOS 原生 OCR (Vision Framework)
+        ocrText = execSync(`python3 src/native-ocr.py "${filePath}"`, { encoding: 'utf-8' }).trim();
+      } catch (err) {
+        logger.warn({ err }, 'Native OCR failed, falling back to stats only');
+      }
+
       const stats = fs.statSync(filePath);
       const info: MediaInfo = {
         type: 'image',
-        description: `这是一张大小为 ${(stats.size / 1024).toFixed(1)} KB 的图片文件。`,
+        description: ocrText 
+          ? `这是一张图片，包含以下 OCR 文本内容：\n--- START OCR ---\n${ocrText}\n--- END OCR ---`
+          : `这是一张大小为 ${(stats.size / 1024).toFixed(1)} KB 的图片文件（未识别到文字）。`,
       };
-      logger.info({ info }, '[MEDIA ANALYSIS RESULT] Image stats ready');
+      
+      logger.info({ ocrTextLength: ocrText.length }, '[MEDIA ANALYSIS RESULT] Image analyzed');
       return info;
     }
 

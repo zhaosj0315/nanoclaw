@@ -49,6 +49,7 @@ import { NewMessage, RegisteredGroup, Session } from './types.js';
 import { loadJson, saveJson } from './utils.js';
 import { logger } from './logger.js';
 import { LarkConnector } from './lark-connector.js';
+import { generateDashboard } from './db-dashboard.js';
 
 const GROUP_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const PID_FILE = path.join(DATA_DIR, 'nanoclaw.pid');
@@ -413,16 +414,17 @@ async function processMessage(msg: NewMessage): Promise<void> {
         // 读取缓存，避免重复分析
         analysis = loadJson<any>(analysisCachePath, null);
       } else {
-        // 关键优化：仅对当前那条触发消息进行实时分析
-        // 历史消息只读缓存，如果没缓存就跳过，避免重启后对历史记录进行风暴式分析
-        if (m.id === msg.id) {
-          analysis = await analyzeMedia(voicePath);
-          if (analysis) saveJson(analysisCachePath, analysis);
-        }
-      }
-
-      if (analysis) {
-        cleanContent += `\n[系统多模态分析: ${analysis.description}]`;
+            // 关键优化：仅对当前那条触发消息进行实时分析
+            if (m.id === msg.id) {
+              if (fs.existsSync(voicePath)) activeMediaFiles.push(voicePath);
+              if (fs.existsSync(imagePath)) activeMediaFiles.push(imagePath);
+              
+              analysis = await analyzeMedia(fs.existsSync(voicePath) ? voicePath : imagePath);
+              if (analysis) saveJson(analysisCachePath, analysis);
+            }
+          }
+        
+          if (analysis) {        cleanContent += `\n[系统多模态分析: ${analysis.description}]`;
       } else if (!isBot) {
         cleanContent += `\n[历史语音消息 (未分析)]`;
       }
@@ -1352,6 +1354,12 @@ async function startMessageLoop(): Promise<void> {
         // Always advance timestamp to prevent getting stuck on a failing message
         lastTimestamp = msg.timestamp;
         saveState();
+      }
+
+      // --- 自动更新看板 ---
+      // 每一轮消息处理结束后，静默更新一次 HTML 看板，确保数据准实时
+      if (messages.length > 0) {
+        generateDashboard().catch(err => logger.error({ err }, 'Auto dashboard update failed'));
       }
     } catch (err) {
       logger.error({ err }, 'Error in message loop');

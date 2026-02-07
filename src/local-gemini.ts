@@ -41,7 +41,7 @@ export async function runLocalGemini(
     const fullPrompt = systemPrompt + prompt;
 
     // 构建命令行参数：将媒体文件路径作为位置参数传入，实现原生多模态支持
-    const args = ['-p', '', '--output-format', 'text', '--approval-mode', 'yolo', ...mediaFiles];
+    const args = ['--output-format', 'text', '--approval-mode', 'yolo', ...mediaFiles];
 
     const gemini = spawn('gemini', args, {
       stdio: ['pipe', 'pipe', 'pipe'],
