@@ -482,14 +482,25 @@ async function processMessage(msg: any): Promise<void> {
     message: { conversation: msg.content } // 这里的构造有助于界面显示被引用的文字
   };
 
-  // 开启打字状态心跳
-  const typingInterval = setInterval(() => setTyping(msg.chat_jid, true), 5000);
-  await setTyping(msg.chat_jid, true);
+  // 开启打字状态心跳 (WhatsApp 体验优化)
+  // 加快刷新频率至 3秒，确保状态不断连，并增加错误捕获
+  let typingInterval: NodeJS.Timeout | null = null;
+  
+  if (!msg.chat_jid.startsWith('lark@')) {
+    await setTyping(msg.chat_jid, true);
+    typingInterval = setInterval(async () => {
+        try {
+            await setTyping(msg.chat_jid, true);
+        } catch (e) { /* ignore */ }
+    }, 3000);
+  }
 
   const response = await runAgent(group, prompt, msg.chat_jid, finalMediaFiles, quotedMsg, msg.id, currentAttachments);
   
-  clearInterval(typingInterval);
-  await setTyping(msg.chat_jid, false);
+  if (typingInterval) clearInterval(typingInterval);
+  if (!msg.chat_jid.startsWith('lark@')) {
+    await setTyping(msg.chat_jid, false);
+  }
 
   if (response) {
     lastAgentTimestamp[msg.chat_jid] = msg.timestamp;

@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识图谱关系浏览器</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 AntV G6 图可视化库 -->
+    <script src="https://unpkg.com/@antv/g6@4.8.9/dist/g6.min.js"></script>
+    <!-- 引入 Papa Parse 用于解析CSV文件 -->
+    <script src="https://unpkg.com/papaparse@5.3.2/papaparse.min.js"></script>
+    <!-- 引入 Google Fonts 字体 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #f0f2f5; }
+        .g6-tooltip { border: 1px solid #e2e2e2; border-radius: 8px; font-size: 14px; color: #333; background-color: #fff; padding: 10px 15px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); max-width: 300px; }
+        .g6-tooltip h4 { font-weight: bold; margin: 0 0 5px 0; font-size: 16px; }
+        .g6-tooltip .tooltip-item { margin: 5px 0; word-wrap: break-word; }
+        .g6-tooltip .tooltip-item-label { font-weight: 500; color: #555; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+        .file-input-label { display: block; padding: 10px 15px; background-color: #f8f9fa; border: 2px dashed #d1d5db; border-radius: 8px; cursor: pointer; text-align: center; transition: background-color 0.2s, border-color 0.2s; }
+        .file-input-label:hover { background-color: #e9ecef; border-color: #a1a1aa; }
+        .file-input-label .filename { font-size: 0.8rem; color: #4b5563; margin-top: 4px; }
+        #legend-container { position: absolute; top: 20px; right: 20px; background-color: rgba(255, 255, 255, 0.9); padding: 10px 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-height: 40%; overflow-y: auto; }
+        .legend-title { font-weight: bold; margin-bottom: 8px; font-size: 14px; text-align: center; }
+        .legend-item { display: flex; align-items: center; margin-bottom: 5px; font-size: 12px; }
+        .legend-color-box { width: 15px; height: 15px; margin-right: 8px; border-radius: 3px; }
+    </style>
+</head>
+<body class="w-screen h-screen m-0 p-0 overflow-hidden flex flex-col">
+
+    <header class="bg-white shadow-md z-10">
+        <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <h1 class="text-2xl font-bold text-gray-800">知识图谱关系浏览器 🌐</h1>
+        </div>
+    </header>
+
+    <main class="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        <aside class="w-full lg:w-96 bg-white p-6 overflow-y-auto border-r border-gray-200">
+            
+            <div class="mb-8">
+                <h2 class="text-xl font-bold text-gray-700 mb-4 border-b pb-2 flex justify-between items-center">
+                    <span>数据导入</span>
+                    <button id="showFormatGuideBtn" class="text-sm text-indigo-600 hover:text-indigo-800 font-medium">查看模板</button>
+                </h2>
+                <div class="space-y-4">
+                    <div><label for="nodesFileInput" class="file-input-label"><span class="font-bold text-gray-700">上传实体文件 (.csv)</span><div id="nodesFileName" class="filename">未选择文件</div></label><input type="file" id="nodesFileInput" class="hidden" accept=".csv"></div>
+                    <div><label for="edgesFileInput" class="file-input-label"><span class="font-bold text-gray-700">上传关系文件 (.csv)</span><div id="edgesFileName" class="filename">未选择文件</div></label><input type="file" id="edgesFileInput" class="hidden" accept=".csv"></div>
+                </div>
+            </div>
+
+            <!-- 新增：共同点探索模块 -->
+            <div class="mb-8 p-4 bg-indigo-50 rounded-lg">
+                <h2 class="text-xl font-bold text-indigo-800 mb-4 border-b border-indigo-200 pb-2">⭐ 价值发现：共同点探索</h2>
+                <p class="text-sm text-gray-600 mb-4">想知道您的一度人脉之间有什么隐藏联系吗？选择一个共同实体（如公司、学校），看看谁和谁因此产生了关联。</p>
+                <div class="space-y-4">
+                    <div>
+                        <label for="commonGroundSelect" class="block text-sm font-medium text-gray-700">选择共同实体</label>
+                        <select id="commonGroundSelect" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                            <option value="">请先加载数据...</option>
+                        </select>
+                    </div>
+                    <button id="commonGroundBtn" class="w-full bg-purple-600 text-white font-bold py-2 px-4 rounded-md hover:bg-purple-700 transition duration-300 shadow-lg">探索共同关系</button>
+                </div>
+            </div>
+
+
+            <div class="mb-8">
+                <h2 class="text-xl font-bold text-gray-700 mb-4 border-b pb-2">1. 单点关系探索</h2>
+                <div class="space-y-4">
+                    <div><label for="startNode" class="block text-sm font-medium text-gray-600">实体ID</label><input type="text" id="startNode" value="p1" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"></div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-600">方向</label>
+                        <div class="mt-2 flex space-x-4">
+                            <label class="inline-flex items-center"><input type="radio" name="direction" value="outgoing" class="form-radio text-indigo-600"> <span class="ml-2">出度</span></label>
+                            <label class="inline-flex items-center"><input type="radio" name="direction" value="incoming" class="form-radio text-indigo-600"> <span class="ml-2">入度</span></label>
+                            <label class="inline-flex items-center"><input type="radio" name="direction" value="bidirectional" checked class="form-radio text-indigo-600"> <span class="ml-2">双向</span></label>
+                        </div>
+                    </div>
+                    <div><label for="depth" class="block text-sm font-medium text-gray-600">探索深度: <span id="depthValue" class="font-bold text-indigo-600">2</span></label><input type="range" id="depth" min="1" max="5" value="2" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"></div>
+                    <button id="exploreBtn" class="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-md hover:bg-indigo-700 transition duration-300 shadow-lg">开始探索</button>
+                </div>
+            </div>
+
+            <div>
+                <h2 class="text-xl font-bold text-gray-700 mb-4 border-b pb-2">2. 双点路径查询</h2>
+                <div class="space-y-4">
+                    <div><label for="pathStartNode" class="block text-sm font-medium text-gray-600">起始实体ID</label><input type="text" id="pathStartNode" value="p1" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"></div>
+                    <div><label for="pathEndNode" class="block text-sm font-medium text-gray-600">目标实体ID</label><input type="text" id="pathEndNode" value="p4" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"></div>
+                    <div><label for="maxPathLength" class="block text-sm font-medium text-gray-600">最大路径长度: <span id="maxPathLengthValue" class="font-bold text-indigo-600">4</span></label><input type="range" id="maxPathLength" min="1" max="8" value="4" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"></div>
+                    <button id="pathfindBtn" class="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 transition duration-300 shadow-lg">查找路径</button>
+                </div>
+            </div>
+            
+            <div id="messageArea" class="mt-6 text-sm text-center font-medium"></div>
+        </aside>
+
+        <section id="graph-container" class="flex-1 bg-gray-50 relative">
+            <div id="loader" class="absolute inset-0 bg-gray-50 bg-opacity-75 flex items-center justify-center z-20 hidden">
+                <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-indigo-500"></div>
+            </div>
+            <div id="legend-container"></div>
+        </section>
+    </main>
+
+    <script>
+        // --- 全局状态管理 ---
+        let currentGraphData;
+        let uploadedData = { nodes: null, edges: null };
+
+        const mockData = {
+            nodes: [
+                { id: 'p1', name: '张三', type: 'Person', age: 35 }, { id: 'p2', name: '李四', type: 'Person', age: 42 }, { id: 'p3', name: '王五', type: 'Person', age: 38 }, { id: 'p4', name: '赵六', type: 'Person', age: 50 },
+                { id: 'c1', name: '蚂蚁集团', type: 'Company', industry: '科技' }, { id: 'c2', name: '阿里巴巴', type: 'Company', industry: '电商' }, { id: 'c3', name: '腾讯', type: 'Company', industry: '社交' },
+                { id: 'l1', name: '杭州', type: 'Location', country: '中国' }, { id: 'l2', name: '深圳', type: 'Location', country: '中国' },
+            ],
+            edges: [
+                { source: 'p1', target: 'c1', type: 'WORKS_AT', role: '工程师', frequency: 10 }, { source: 'p2', target: 'c2', type: 'WORKS_AT', role: '产品经理', frequency: 8 }, { source: 'p3', target: 'c3', type: 'WORKS_AT', role: '设计师', frequency: 12 },
+                { source: 'p1', target: 'p2', type: 'COLLEAGUE', years: 5, frequency: 15 }, { source: 'p1', target: 'p3', type: 'FRIEND', frequency: 5 }, { source: 'c2', target: 'c1', type: 'INVESTED_IN', amount: '100M', frequency: 7 },
+                { source: 'p4', target: 'c2', type: 'FOUNDER', frequency: 20 }, { source: 'p1', target: 'l1', type: 'LIVES_IN', frequency: 18 }, { source: 'c1', target: 'l1', type: 'LOCATED_IN', frequency: 19 },
+                { source: 'c2', target: 'l1', type: 'LOCATED_IN', frequency: 19 }, { source: 'p3', target: 'l2', type: 'LIVES_IN', frequency: 14 }, { source: 'c3', target: 'l2', type: 'LOCATED_IN', frequency: 16 },
+                { source: 'p2', target: 'p4', type: 'REPORTS_TO', frequency: 9 },
+                // 添加更多数据以支持共同点发现
+                { source: 'p3', target: 'c1', type: 'WORKS_AT', role: '前同事', frequency: 8 },
+            ]
+        };
+        
+        // --- G6 可视化配置 ---
+        const container = document.getElementById('graph-container');
+        const loader = document.getElementById('loader');
+        const nodeColors = { Person: '#5B8FF9', Company: '#5AD8A6', Location: '#F6BD16', University: '#F6903D' };
+        const edgeColors = { WORKS_AT: '#61DDAA', LIVES_IN: '#F08BB4', INVESTED_IN: '#FFAB2E', LOCATED_IN: '#7882FF', FRIEND: '#9661BC', COLLEAGUE: '#5B8FF9', FOUNDER: '#E8684A', REPORTS_TO: '#6DC8EC', ATTENDED: '#F6903D'};
+        
+        const tooltip = new G6.Tooltip({
+            offsetX: 5, offsetY: 10, itemTypes: ['node', 'edge'],
+            getContent: (e) => {
+                const outDiv = document.createElement('div');
+                outDiv.className = 'g6-tooltip';
+                const model = e.item.getModel();
+                const title = model.name || model.id;
+                if (e.item.getType() === 'node') {
+                    outDiv.innerHTML = `<h4>${title}</h4>`;
+                    Object.entries(model).forEach(([key, value]) => {
+                        if (!['name', 'label', 'x', 'y', 'size', 'style', 'shape', 'color', 'id', 'index', 'vx', 'vy', 'fx', 'fy'].includes(key)) {
+                            outDiv.innerHTML += `<div class="tooltip-item"><span class="tooltip-item-label">${key}:</span> ${value}</div>`;
+                        }
+                    });
+                } else {
+                    outDiv.innerHTML = `<h4>关系: ${model.type || '未定义'}</h4>`;
+                    Object.entries(model).forEach(([key, value]) => {
+                        if (!['type', 'source', 'target', 'id', 'label', 'style', 'shape', 'color', 'startPoint', 'endPoint', 'controlPoints'].includes(key)) {
+                           outDiv.innerHTML += `<div class="tooltip-item"><span class="tooltip-item-label">${key}:</span> ${value}</div>`;
+                        }
+                    });
+                }
+                return outDiv;
+            },
+        });
+
+        let graph;
+        function initGraph() {
+            if(graph) graph.destroy();
+            graph = new G6.Graph({
+                container: 'graph-container', width: container.scrollWidth, height: container.scrollHeight, plugins: [tooltip],
+                layout: { type: 'force', preventOverlap: true, linkDistance: d => Math.max(300 - (d.frequency || 0) * 10, 80), nodeStrength: -200, edgeStrength: 0.2, },
+                modes: { default: ['drag-canvas', 'zoom-canvas', 'drag-node'] },
+                nodeStateStyles: { active: { stroke: '#000', lineWidth: 3 }, inactive: { opacity: 0.3 } },
+                edgeStateStyles: { active: { stroke: '#000', lineWidth: 3 }, inactive: { opacity: 0.3 } },
+                defaultNode: { size: 40, style: { lineWidth: 2, fill: '#C6E5FF', stroke: '#5B8FF9' }, labelCfg: { style: { fill: '#333', fontSize: 12 }, position: 'bottom' } },
+                defaultEdge: { size: 1, color: '#e2e2e2', style: { endArrow: { path: G6.Arrow.triangle(10, 12, 25), d: 25 }, lineWidth: 2 }, labelCfg: { autoRotate: true, refY: -10, style: { fill: '#666', fontSize: 10 } } },
+            });
+            bindGraphEvents();
+            window.onresize = () => { if (graph && !graph.get('destroyed') && container.scrollWidth && container.scrollHeight) graph.changeSize(container.scrollWidth, container.scrollHeight); };
+        }
+        
+        const allElements = ['nodesFileInput', 'edgesFileInput', 'nodesFileName', 'edgesFileName', 'startNode', 'depth', 'depthValue', 'exploreBtn', 'pathStartNode', 'pathEndNode', 'maxPathLength', 'maxPathLengthValue', 'pathfindBtn', 'messageArea', 'showFormatGuideBtn', 'legend-container', 'commonGroundSelect', 'commonGroundBtn'];
+        const ui = {};
+        allElements.forEach(id => ui[id] = document.getElementById(id));
+        
+        function showMessage(msg, isError = false) { ui.messageArea.textContent = msg; ui.messageArea.className = `mt-6 text-sm text-center font-medium ${isError ? 'text-red-500' : 'text-green-600'}`; }
+        function clearMessage() { ui.messageArea.textContent = ''; }
+
+        function processAndVisualize() {
+            if (uploadedData.nodes && uploadedData.edges) {
+                currentGraphData = { ...uploadedData };
+                showMessage("数据加载成功！正在渲染图谱...", false);
+                updateCommonGroundSelector(); // 更新共同点下拉菜单
+                if (currentGraphData.nodes.length > 0) { ui.startNode.value = currentGraphData.nodes[0].id; ui.exploreBtn.click(); }
+                else { graph.clear(); graph.paint(); }
+            }
+        }
+
+        function handleFileUpload(file, type) {
+            if (!file) return;
+            const fileNameDisplay = type === 'nodes' ? ui.nodesFileName : ui.edgesFileName;
+            fileNameDisplay.textContent = file.name;
+            Papa.parse(file, {
+                header: true, skipEmptyLines: true,
+                complete: (results) => {
+                    const requiredKeys = type === 'nodes' ? ['id'] : ['source', 'target'];
+                    if (results.data.length > 0 && requiredKeys.every(k => results.data[0].hasOwnProperty(k))) { uploadedData[type] = results.data; processAndVisualize(); }
+                    else { showMessage(`文件 ${file.name} 缺少必需的列: ${requiredKeys.join(', ')}`, true); fileNameDisplay.textContent = "文件格式错误"; }
+                },
+                error: (error) => { showMessage(`解析文件时出错: ${error.message}`, true); fileNameDisplay.textContent = "解析失败"; }
+            });
+        }
+        
+        ui.nodesFileInput.addEventListener('change', (e) => handleFileUpload(e.target.files[0], 'nodes'));
+        ui.edgesFileInput.addEventListener('change', (e) => handleFileUpload(e.target.files[0], 'edges'));
+        ui.depth.addEventListener('input', (e) => ui.depthValue.textContent = e.target.value);
+        ui.maxPathLength.addEventListener('input', (e) => ui.maxPathLengthValue.textContent = e.target.value);
+
+        ui.exploreBtn.addEventListener('click', () => {
+            clearMessage();
+            if (!currentGraphData || currentGraphData.nodes.length === 0) { showMessage(`请先加载数据。`, true); return; }
+            const startNodeId = ui.startNode.value.trim();
+            if (!currentGraphData.nodes.find(n => n.id === startNodeId)) { showMessage(`错误: 实体ID "${startNodeId}" 不存在。`, true); return; }
+            loader.classList.remove('hidden');
+            setTimeout(() => {
+                const { nodes, edges } = getNeighbors(startNodeId, parseInt(ui.depth.value), document.querySelector('input[name="direction"]:checked').value);
+                renderGraph(nodes, edges, startNodeId);
+                loader.classList.add('hidden');
+            }, 500);
+        });
+        
+        function getNeighbors(startNodeId, maxDepth, direction) {
+            let allNodes = new Map(), allEdges = new Map(), queue = [{ id: startNodeId, depth: 0 }], visited = new Set([startNodeId]);
+            const startNode = currentGraphData.nodes.find(n => n.id === startNodeId);
+            if(startNode) allNodes.set(startNodeId, startNode);
+            while (queue.length > 0) {
+                const { id, depth } = queue.shift();
+                if (depth >= maxDepth) continue;
+                const relatedEdges = currentGraphData.edges.filter(edge => {
+                    if (direction === 'outgoing') return edge.source === id;
+                    if (direction === 'incoming') return edge.target === id;
+                    return edge.source === id || edge.target === id;
+                });
+                relatedEdges.forEach(edge => {
+                    const neighborId = edge.source === id ? edge.target : edge.source;
+                    if (!visited.has(neighborId)) {
+                        visited.add(neighborId);
+                        const neighborNode = currentGraphData.nodes.find(n => n.id === neighborId);
+                        if (neighborNode) { allNodes.set(neighborId, neighborNode); queue.push({ id: neighborId, depth: depth + 1 }); }
+                    }
+                    if (!allEdges.has(`${edge.source}-${edge.target}-${edge.type}`)) { allEdges.set(`${edge.source}-${edge.target}-${edge.type}`, edge); }
+                });
+            }
+            return { nodes: Array.from(allNodes.values()), edges: Array.from(allEdges.values()).sort((a, b) => (b.frequency || 0) - (a.frequency || 0)) };
+        }
+
+        ui.pathfindBtn.addEventListener('click', () => {
+            clearMessage();
+            if (!currentGraphData || currentGraphData.nodes.length === 0) { showMessage(`请先加载数据。`, true); return; }
+            const startId = ui.pathStartNode.value.trim(), endId = ui.pathEndNode.value.trim();
+            if (!currentGraphData.nodes.find(n => n.id === startId) || !currentGraphData.nodes.find(n => n.id === endId)) { showMessage(`错误: 请确保起始和目标实体ID都存在。`, true); return; }
+            loader.classList.remove('hidden');
+            setTimeout(() => {
+                const path = findShortestPath(startId, endId, parseInt(ui.maxPathLength.value));
+                if (!path) { showMessage(`未能在指定长度内找到路径。`, true); graph.clear(); graph.paint(); } 
+                else {
+                    const pathNodes = new Map(), pathEdges = new Map();
+                    path.forEach(edge => {
+                        if(!pathNodes.has(edge.source)) pathNodes.set(edge.source, currentGraphData.nodes.find(n => n.id === edge.source));
+                        if(!pathNodes.has(edge.target)) pathNodes.set(edge.target, currentGraphData.nodes.find(n => n.id === edge.target));
+                        pathEdges.set(`${edge.source}-${edge.target}-${edge.type}`, edge);
+                    });
+                    renderGraph(Array.from(pathNodes.values()), Array.from(pathEdges.values()));
+                    graph.getEdges().forEach(e => graph.updateItem(e, { style: { lineWidth: 4, shadowColor: '#10B981', shadowBlur: 15 } }));
+                    graph.getNodes().forEach(n => graph.updateItem(n, { size: 45, style: { lineWidth: 3 } }));
+                }
+                loader.classList.add('hidden');
+            }, 500);
+        });
+
+        function findShortestPath(startId, endId, maxLength) {
+            let queue = [[startId, []]], visited = new Set([startId]);
+            while (queue.length > 0) {
+                let [currentId, path] = queue.shift();
+                if (currentId === endId) return path;
+                if (path.length >= maxLength) continue;
+                const neighbors = currentGraphData.edges.filter(e => e.source === currentId || e.target === currentId);
+                for (const edge of neighbors) {
+                    const neighborId = edge.source === currentId ? edge.target : edge.source;
+                    if (!visited.has(neighborId)) { visited.add(neighborId); queue.push([neighborId, [...path, edge]]); }
+                }
+            }
+            return null;
+        }
+
+        // --- 新增：共同点探索逻辑 ---
+        ui.commonGroundBtn.addEventListener('click', () => {
+            clearMessage();
+            const commonGroundId = ui.commonGroundSelect.value;
+            if (!commonGroundId) {
+                showMessage('请选择一个共同实体进行探索。', true);
+                return;
+            }
+            loader.classList.remove('hidden');
+            setTimeout(() => {
+                const { nodes, edges } = findByCommonGround(commonGroundId);
+                if (nodes.length <= 1) { // 只有共同点自己，没有关联的人
+                     showMessage(`没有找到通过 "${ui.commonGroundSelect.options[ui.commonGroundSelect.selectedIndex].text}" 产生关联的联系人。`, false);
+                     graph.clear(); graph.paint();
+                } else {
+                     renderGraph(nodes, edges, commonGroundId);
+                }
+                loader.classList.add('hidden');
+            }, 500);
+        });
+
+        function findByCommonGround(commonGroundId) {
+            const relatedEdges = currentGraphData.edges.filter(e => e.target === commonGroundId);
+            const personIds = new Set(relatedEdges.map(e => e.source));
+            
+            const nodes = currentGraphData.nodes.filter(n => personIds.has(n.id) || n.id === commonGroundId);
+            const edges = relatedEdges;
+            
+            return { nodes, edges };
+        }
+        
+        function updateCommonGroundSelector() {
+            const nonPersonNodes = currentGraphData.nodes.filter(n => n.type && n.type.toLowerCase() !== 'person');
+            ui.commonGroundSelect.innerHTML = '<option value="">-- 请选择 --</option>';
+            nonPersonNodes.forEach(n => {
+                const option = document.createElement('option');
+                option.value = n.id;
+                option.textContent = `${n.name} (${n.type})`;
+                ui.commonGroundSelect.appendChild(option);
+            });
+        }
+        
+        // --- 统一的渲染函数 ---
+        function renderGraph(nodes, edges, centerNodeId) {
+            updateLegend(nodes, edges);
+            const formattedData = {
+                nodes: nodes.map(n => ({ ...n, label: n.name || n.id, style: { fill: nodeColors[n.type] || '#ccc', stroke: nodeColors[n.type] ? 'white' : '#999' } })),
+                edges: edges.map(e => ({ ...e, label: e.type, style: { stroke: edgeColors[e.type] || '#ccc' } }))
+            };
+            graph.changeData(formattedData, true);
+            if (centerNodeId) {
+                const centerNode = graph.findById(centerNodeId);
+                if (centerNode) {
+                    graph.updateItem(centerNode, { size: 60, style: { lineWidth: 4, shadowColor: '#9F7AEA', shadowBlur: 20 } });
+                    graph.focusItem(centerNode, true, { easing: 'easeCubic', duration: 500 });
+                }
+            }
+        }
+
+        function bindGraphEvents() {
+            const clearAllStats = () => {
+                graph.getNodes().forEach(node => graph.clearItemStates(node));
+                graph.getEdges().forEach(edge => graph.clearItemStates(edge));
+            };
+            graph.on('node:mouseenter', (e) => {
+                clearAllStats();
+                const { item } = e;
+                graph.setItemState(item, 'active', true);
+                item.getEdges().forEach(edge => {
+                    graph.setItemState(edge, 'active', true);
+                    graph.setItemState(edge.getSource(), 'active', true);
+                    graph.setItemState(edge.getTarget(), 'active', true);
+                });
+            });
+            graph.on('node:mouseleave', clearAllStats);
+            graph.on('node:click', (e) => { ui.startNode.value = e.item.getID(); ui.exploreBtn.click(); });
+        }
+        
+        function updateLegend(nodes, edges) {
+            const nodeTypes = [...new Set(nodes.map(n => n.type))].filter(Boolean);
+            const edgeTypes = [...new Set(edges.map(e => e.type))].filter(Boolean);
+            let legendHTML = '';
+            if (nodeTypes.length > 0) {
+                legendHTML += '<div class="legend-title">实体类型</div>';
+                nodeTypes.forEach(type => { legendHTML += `<div class="legend-item"><div class="legend-color-box" style="background-color: ${nodeColors[type] || '#ccc'}"></div><span>${type}</span></div>`; });
+            }
+             if (edgeTypes.length > 0 && nodeTypes.length > 0) { legendHTML += '<hr class="my-2 border-gray-200">'; }
+            if (edgeTypes.length > 0) {
+                legendHTML += '<div class="legend-title">关系类型</div>';
+                edgeTypes.forEach(type => { legendHTML += `<div class="legend-item"><div class="legend-color-box" style="background-color: ${edgeColors[type] || '#ccc'}"></div><span>${type}</span></div>`; });
+            }
+            ui['legend-container'].innerHTML = legendHTML;
+        }
+
+        function initializeApp() {
+            initGraph();
+            currentGraphData = JSON.parse(JSON.stringify(mockData));
+            updateCommonGroundSelector();
+            if (currentGraphData.nodes.length > 0) { ui.exploreBtn.click(); }
+        }
+        
+        initializeApp();
+        
+        ui.showFormatGuideBtn.addEventListener('click', () => { alert("请参考另一个文档《Excel/CSV 数据导入模板》来准备您的数据文件。"); });
+        
+    </script>
+</body>
+</html>
