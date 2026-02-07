@@ -28,6 +28,9 @@ export class LarkConnector {
         if (!message || !sender) return;
         if (sender.sender_type === 'bot') return;
 
+        // 黑盒探测：打印最原始的 message 结构，彻底查清 content 为空的原因
+        logger.info({ rawMessage: message }, '--- LARK RAW PAYLOAD ---');
+
         const messageId = message.message_id;
         const msgType = (message as any).msg_type;
         
@@ -63,6 +66,12 @@ export class LarkConnector {
           if (!content && msgType === 'text' && rawContent.includes('"text":"')) {
             const match = rawContent.match(/"text":"(.*?)"/);
             if (match) content = match[1];
+          }
+
+          // 核弹级兜底：如果所有解析都失败，直接把原始 content 塞进去
+          // 宁可让 AI 看到一段 JSON，也不能让消息丢了
+          if (!content && msgType === 'text') {
+             content = `[RAW_LARK] ${rawContent}`;
           }
         } catch (e) {
           logger.error({ e, messageId }, 'Lark content parsing failed, using fallback');
