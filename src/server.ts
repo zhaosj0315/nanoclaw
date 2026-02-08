@@ -87,7 +87,16 @@ app.post('/api/fix', (req, res) => {
     if (!task) return res.status(404).json({ error: 'Task not found' });
     try {
         const newId = `fix-${Date.now()}`;
-        storeGenericMessage({ id: newId, chat_jid: task.session_id, sender_jid: task.session_id, content: `[SYSTEM_FIX] 用户反馈缺失必要附件。请核对指令 "${task.content}" 并补发。`, timestamp: new Date().toISOString(), from_me: false });
+        // 构造高优先级意图补全指令
+        const recoveryPrompt = `[CRITICAL_RECOVERY] 你在之前的交互中产生了动作幻觉。指令「${task.content}」要求执行特定动作，但你仅作了文本回复。请立即调用对应的工具（文件/图片/语音）完成任务，禁止输出任何解释性文字。`;
+        storeGenericMessage({ 
+            id: newId, 
+            chat_jid: task.session_id, 
+            sender_jid: task.session_id, 
+            content: recoveryPrompt, 
+            timestamp: new Date().toISOString(), 
+            from_me: false 
+        });
         res.json({ success: true, newId });
     } catch (err) { res.status(500).json({ error: 'Fix initiation failed' }); }
 });

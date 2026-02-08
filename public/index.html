@@ -41,7 +41,7 @@
 
         .intent-mismatch { background-color: rgba(127, 29, 29, 0.1) !important; box-shadow: inset 3px 0 0 0 #ef4444; }
 
-        /* Navigation Rail */
+        /* Multi-View Sidebar */
         .side-nav { position: fixed; left: 0; top: 0; bottom: 0; width: 54px; background: #020617; border-right: 1px solid #1e293b; display: flex; flex-direction: column; align-items: center; padding-top: 1.5rem; gap: 1rem; z-index: 100; }
         .nav-item { width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; border-radius: 10px; cursor: pointer; color: #475569; transition: all 0.2s; position: relative; }
         .nav-item:hover { color: #94a3b8; background: #1e293b; }
@@ -49,18 +49,16 @@
         .nav-tooltip { visibility: hidden; position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 15px; background: #1e293b; color: white; padding: 5px 10px; border-radius: 6px; font-size: 10px; white-space: nowrap; z-index: 200; border: 1px solid #334155; font-weight: 900; }
         .nav-item:hover .nav-tooltip { visibility: visible; }
 
-        /* Full Screen Switching (CRITICAL FIX) */
-        .view-content { display: none !important; height: 100vh; width: calc(100vw - 54px); margin-left: 54px; flex-direction: column; background-color: #020617; }
+        .view-content { display: none !important; height: 100vh; width: calc(100vw - 54px); margin-left: 54px; flex-direction: column; }
         .view-content.active { display: flex !important; }
-        
         .data-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 1.25rem; }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-300 font-mono h-screen flex overflow-hidden">
-    <!-- Fixed Side Navigation -->
+    <!-- Side Navigation -->
     <nav class="side-nav">
         <div class="nav-item active" onclick="switchView('operations')" id="nav-operations">
-            <span class="text-xl">📡</span><span class="nav-tooltip uppercase tracking-widest">Operations</span>
+            <span class="text-xl">📡</span><span class="nav-tooltip uppercase tracking-widest">Audit</span>
         </div>
         <div class="nav-item" onclick="switchView('knowledge')" id="nav-knowledge">
             <span class="text-xl">🧠</span><span class="nav-tooltip uppercase tracking-widest">Memory</span>
@@ -76,7 +74,7 @@
         </div>
     </nav>
 
-    <!-- VIEW: OPERATIONS -->
+    <!-- VIEW: OPERATIONS (THE AUDIT TERMINAL) -->
     <main id="view-operations" class="view-content active p-4">
         <div class="w-full h-full flex flex-col">
             <header class="mb-4 flex justify-between items-center shrink-0 px-2">
@@ -85,7 +83,6 @@
                         <img src="/assets/logo.png" class="h-6 w-6" alt="Logo" onerror="this.style.display='none'">
                         <span class="tracking-tighter uppercase"><span class="text-emerald-500">NanoClaw</span> <span class="text-slate-500">Tactical_5.0</span></span>
                     </h1>
-                    <div id="heatmap-container" class="hidden lg:flex gap-2 bg-slate-900/50 p-1 px-3 rounded border border-slate-800"></div>
                     <div class="relative">
                         <input type="text" id="search-box" placeholder="SEARCH_LOGS..." class="bg-slate-900 border border-slate-800 rounded px-3 py-1 text-[10px] w-48 focus:outline-none focus:border-emerald-500/50" oninput="renderCurrentData()">
                     </div>
@@ -170,7 +167,6 @@
         </div>
     </main>
 
-    <!-- Drawer -->
     <div id="drawer" class="drawer">
         <div class="p-4 border-b border-slate-800 flex justify-between bg-slate-950 items-center">
             <h2 class="text-sm font-black uppercase text-emerald-500" id="drawer-title">Metadata</h2>
@@ -196,16 +192,12 @@
 
         function switchView(viewName) {
             currentActiveView = viewName;
-            // First hide all
             document.querySelectorAll('.view-content').forEach(v => v.classList.remove('active'));
             document.querySelectorAll('.nav-item').forEach(v => v.classList.remove('active'));
-            
-            // Show target
             const targetView = document.getElementById(`view-${viewName}`);
             const targetNav = document.getElementById(`nav-${viewName}`);
             if (targetView) targetView.classList.add('active');
             if (targetNav) targetNav.classList.add('active');
-            
             if (viewName === 'knowledge') fetchMemories();
             else if (viewName === 'automation') fetchAutomation();
             else if (viewName === 'comms') fetchChats();
@@ -300,7 +292,7 @@
 
         function getStatusBadge(s, w, id) {
             let cls = s === 'PENDING' ? 'bg-amber-950/50 text-amber-400 border-amber-800/50' : (w ? 'bg-red-950 text-white border-red-500 animate-pulse' : 'bg-emerald-950/50 text-emerald-400 border-emerald-800/50');
-            return `<div class="flex flex-col gap-1 items-center w-full"><div class="px-2 py-0.5 rounded border ${cls} text-[9px] font-black text-center w-full uppercase tracking-widest">${s === 'PENDING' ? 'RUN' : (w ? 'MISSING' : 'DONE')}</div><button onclick="retryTask('${id}')" class="text-[8px] text-slate-600 hover:text-white uppercase font-bold">↺ RETRY</button></div>`;
+            return `<div class="flex flex-col gap-1 items-center w-full"><div class="px-2 py-0.5 rounded border ${cls} text-[9px] font-black text-center w-full uppercase tracking-widest">${s === 'PENDING' ? 'RUN' : (w ? 'MISSING' : 'DONE')}</div><button onclick="triggerFix('${id}', this)" class="text-[8px] text-rose-400 hover:text-white uppercase font-bold">🔧 FIX</button><button onclick="retryTask('${id}', this)" class="text-[8px] text-slate-600 hover:text-white uppercase font-bold">↺ RETRY</button></div>`;
         }
 
         function getDurationBadge(ms, usage, w, tel) {
@@ -337,7 +329,14 @@
             drawer.classList.add('open');
         }
 
-        async function retryTask(id) {
+        async function triggerFix(id, btn) {
+            btn.innerHTML = 'FIXING...';
+            await fetch('/api/fix', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+            statusIndicator.textContent = 'RECOVERY_INJECTED';
+        }
+
+        async function retryTask(id, btn) {
+            btn.innerHTML = 'RE-RUN...';
             await fetch('/api/retry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
             statusIndicator.textContent = 'TASK_REQUEUED';
         }

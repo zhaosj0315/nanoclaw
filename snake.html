@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retro Snake - 🐾 NanoClaw Pro</title>
+    <style>
+        :root {
+            --neon-green: #39ff14;
+            --dark-bg: #050505;
+            --snake-body: #00ff41;
+            --food-red: #ff3131;
+            --turbo-blue: #00f2ff;
+        }
+
+        body {
+            background-color: var(--dark-bg);
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            background: radial-gradient(circle at center, #1a1a1a 0%, #050505 100%);
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+            color: var(--neon-green);
+            text-shadow: 0 0 10px var(--neon-green);
+            letter-spacing: 5px;
+        }
+
+        #game-container {
+            position: relative;
+            box-shadow: 0 0 40px rgba(57, 255, 20, 0.15);
+            border: 4px solid #333;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            background-color: #000;
+        }
+
+        #ui-overlay {
+            margin-top: 20px;
+            width: 400px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .stats {
+            font-size: 20px;
+            font-weight: bold;
+            color: var(--neon-green);
+            text-shadow: 0 0 5px var(--neon-green);
+        }
+
+        #high-score {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .controls-hint {
+            position: absolute;
+            bottom: 20px;
+            font-size: 12px;
+            color: #444;
+            text-transform: uppercase;
+        }
+
+        #game-over, #start-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+
+        #start-screen {
+            background: rgba(0, 0, 0, 0.95);
+        }
+
+        .btn {
+            background: transparent;
+            color: var(--neon-green);
+            border: 2px solid var(--neon-green);
+            padding: 12px 30px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 20px;
+            font-weight: bold;
+            transition: all 0.2s;
+            margin-top: 20px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+
+        .btn:hover {
+            background: var(--neon-green);
+            color: black;
+            box-shadow: 0 0 30px var(--neon-green);
+            transform: scale(1.05);
+        }
+
+        .btn-ai {
+            border-color: var(--turbo-blue);
+            color: var(--turbo-blue);
+            font-size: 14px;
+            padding: 8px 15px;
+            margin-top: 10px;
+        }
+
+        .btn-ai:hover {
+            background: var(--turbo-blue);
+            box-shadow: 0 0 20px var(--turbo-blue);
+        }
+
+        .ai-status {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: var(--turbo-blue);
+            font-size: 12px;
+            display: none;
+            letter-spacing: 2px;
+        }
+
+        @keyframes pulse {
+            from { opacity: 0.5; }
+            to { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>NANOCLAW 🐾 SNAKE</h1>
+
+    <div id="game-container">
+        <canvas id="snakeCanvas" width="400" height="400"></canvas>
+        <div id="turbo-indicator">TURBO ACTIVE!</div>
+        <div id="ai-indicator" class="ai-status">AUTO-EVOLVE ACTIVE 🐾</div>
+        
+        <div id="start-screen">
+            <div style="font-size: 4rem; margin-bottom: 20px;">🐾</div>
+            <button class="btn" onclick="startGame()">开始捕猎</button>
+            <button class="btn btn-ai" onclick="toggleAI()">AI 进化模式</button>
+            <p style="color: #666; margin-top: 20px; font-size: 12px;">WASD 或 方向键移动</p>
+        </div>
+
+        <div id="game-over" style="display: none;">
+            <h2 style="color: var(--food-red); font-size: 2.5rem;">MISSION FAILED</h2>
+            <p id="final-score" style="font-size: 1.5rem; margin: 10px 0;">得分: 0</p>
+            <button class="btn" onclick="startGame()">重试</button>
+        </div>
+    </div>
+
+    <div id="ui-overlay">
+        <div class="stats">SCORE: <span id="current-score">0</span></div>
+        <div id="high-score">HIGH: <span id="best-score">0</span></div>
+    </div>
+
+    <div class="controls-hint">Terminal Interface v1.0 | Protected by NanoClaw</div>
+
+    <script>
+        const canvas = document.getElementById('snakeCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('current-score');
+        const bestScoreElement = document.getElementById('best-score');
+        const finalScoreElement = document.getElementById('final-score');
+        const gameOverScreen = document.getElementById('game-over');
+        const startScreen = document.getElementById('start-screen');
+        const turboIndicator = document.getElementById('turbo-indicator');
+
+        const gridSize = 20;
+        const tileCount = canvas.width / gridSize;
+
+        let score = 0;
+        let highScore = localStorage.getItem('nanoclaw_snake_highscore') || 0;
+        let dx = 0;
+        let dy = 0;
+        let snake = [];
+        let food = {x: 5, y: 5};
+        let gameLoop = null;
+        let speed = 100;
+        let turboMode = false;
+        let aiMode = false;
+        let particles = [];
+        let goldenFood = null;
+        let obstacles = [];
+        let level = 1;
+
+        bestScoreElement.textContent = highScore;
+
+        function toggleAI() {
+            aiMode = !aiMode;
+            document.getElementById('ai-indicator').style.display = aiMode ? 'block' : 'none';
+            if (aiMode && !gameLoop) startGame();
+        }
+
+        function findBestMove() {
+            const head = snake[0];
+            const target = goldenFood || food;
+            
+            // A* Algorithm
+            const openSet = [{
+                x: head.x, 
+                y: head.y, 
+                g: 0, 
+                h: Math.abs(head.x - target.x) + Math.abs(head.y - target.y),
+                f: Math.abs(head.x - target.x) + Math.abs(head.y - target.y),
+                path: []
+            }];
+            const closedSet = new Set();
+            
+            while (openSet.length > 0) {
+                // Get node with lowest f score
+                openSet.sort((a, b) => a.f - b.f);
+                const curr = openSet.shift();
+                
+                if (curr.x === target.x && curr.y === target.y) {
+                    return curr.path[0];
+                }
+                
+                closedSet.add(`${curr.x},${curr.y}`);
+                
+                const neighbors = [
+                    {x: curr.x, y: curr.y - 1, dx: 0, dy: -1},
+                    {x: curr.x, y: curr.y + 1, dx: 0, dy: 1},
+                    {x: curr.x - 1, y: curr.y, dx: -1, dy: 0},
+                    {x: curr.x + 1, y: curr.y, dx: 1, dy: 0}
+                ];
+                
+                for (const next of neighbors) {
+                    if (next.x < 0 || next.x >= tileCount || next.y < 0 || next.y >= tileCount) continue;
+                    if (snake.some(s => s.x === next.x && s.y === next.y)) continue;
+                    if (obstacles.some(o => o.x === next.x && o.y === next.y)) continue;
+                    if (closedSet.has(`${next.x},${next.y}`)) continue;
+                    
+                    const g = curr.g + 1;
+                    const h = Math.abs(next.x - target.x) + Math.abs(next.y - target.y);
+                    const f = g + h;
+                    
+                    const existing = openSet.find(o => o.x === next.x && o.y === next.y);
+                    if (existing) {
+                        if (g < existing.g) {
+                            existing.g = g;
+                            existing.f = f;
+                            existing.path = [...curr.path, {dx: next.dx, dy: next.dy}];
+                        }
+                    } else {
+                        openSet.push({
+                            x: next.x, 
+                            y: next.y, 
+                            g: g, 
+                            h: h, 
+                            f: f, 
+                            path: [...curr.path, {dx: next.dx, dy: next.dy}]
+                        });
+                    }
+                }
+            }
+            
+            // Survival Mode: If no path found, choose neighbor with most empty space (simple flood fill preview)
+            const neighbors = [
+                {x: head.x, y: head.y - 1, dx: 0, dy: -1},
+                {x: head.x, y: head.y + 1, dx: 0, dy: 1},
+                {x: head.x - 1, y: head.y, dx: -1, dy: 0},
+                {x: head.x + 1, y: head.y, dx: 1, dy: 0}
+            ];
+            
+            let bestSurvivalMove = null;
+            let maxFreeSpace = -1;
+            
+            for (const move of neighbors) {
+                if (move.x >= 0 && move.x < tileCount && move.y >= 0 && move.y < tileCount &&
+                    !snake.some(s => s.x === move.x && s.y === move.y) &&
+                    !obstacles.some(o => o.x === move.x && o.y === move.y)) {
+                    
+                    // Count free neighbors as a proxy for "space"
+                    let freeSpace = 0;
+                    const checks = [
+                        {x: move.x+1, y: move.y}, {x: move.x-1, y: move.y},
+                        {x: move.x, y: move.y+1}, {x: move.x, y: move.y-1}
+                    ];
+                    for(const c of checks) {
+                        if(c.x >= 0 && c.x < tileCount && c.y >= 0 && c.y < tileCount &&
+                           !snake.some(s => s.x === c.x && s.y === c.y) &&
+                           !obstacles.some(o => o.x === c.x && o.y === c.y)) {
+                            freeSpace++;
+                        }
+                    }
+                    
+                    if (freeSpace > maxFreeSpace) {
+                        maxFreeSpace = freeSpace;
+                        bestSurvivalMove = move;
+                    }
+                }
+            }
+            return bestSurvivalMove;
+        }
+
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.size = Math.random() * 3 + 1;
+                this.speedX = Math.random() * 6 - 3;
+                this.speedY = Math.random() * 6 - 3;
+                this.life = 1.0;
+            }
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+                this.life -= 0.05;
+            }
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.globalAlpha = this.life;
+                ctx.fillRect(this.x, this.y, this.size, this.size);
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        function startGame() {
+            score = 0;
+            level = 1;
+            scoreElement.textContent = score;
+            snake = [
+                {x: 10, y: 10},
+                {x: 10, y: 11},
+                {x: 10, y: 12}
+            ];
+            dx = 0;
+            dy = -1;
+            speed = 100;
+            turboMode = false;
+            goldenFood = null;
+            obstacles = [];
+            turboIndicator.style.display = 'none';
+            spawnFood();
+            startScreen.style.display = 'none';
+            gameOverScreen.style.display = 'none';
+            if (gameLoop) clearInterval(gameLoop);
+            gameLoop = setInterval(draw, speed);
+            document.addEventListener('keydown', changeDirection);
+        }
+
+        function spawnFood() {
+            food = {
+                x: Math.floor(Math.random() * tileCount),
+                y: Math.floor(Math.random() * tileCount)
+            };
+            // Check collision with snake, obstacles
+            if (snake.some(s => s.x === food.x && s.y === food.y) || 
+                obstacles.some(o => o.x === food.x && o.y === food.y)) {
+                spawnFood();
+            }
+        }
+
+        function spawnGoldenFood() {
+            goldenFood = {
+                x: Math.floor(Math.random() * tileCount),
+                y: Math.floor(Math.random() * tileCount)
+            };
+            if (snake.some(s => s.x === goldenFood.x && s.y === goldenFood.y) || 
+                obstacles.some(o => o.x === goldenFood.x && o.y === goldenFood.y) ||
+                (food.x === goldenFood.x && food.y === goldenFood.y)) {
+                spawnGoldenFood();
+            }
+            // Disappear after 5 seconds
+            setTimeout(() => { goldenFood = null; }, 5000);
+        }
+
+        function spawnObstacles() {
+            obstacles = [];
+            const count = Math.min(level * 3, 15);
+            for(let i=0; i<count; i++) {
+                const obs = {
+                    x: Math.floor(Math.random() * tileCount),
+                    y: Math.floor(Math.random() * tileCount)
+                };
+                // Avoid snake head and body area
+                const isNearSnake = snake.some(s => Math.abs(s.x - obs.x) < 2 && Math.abs(s.y - obs.y) < 2);
+                if (isNearSnake || (food.x === obs.x && food.y === obs.y)) {
+                    i--; continue;
+                }
+                obstacles.push(obs);
+            }
+        }
+
+        function draw() {
+            if (aiMode) {
+                const move = findBestMove();
+                if (move) {
+                    dx = move.dx;
+                    dy = move.dy;
+                }
+            }
+            moveSnake();
+            if (checkGameOver()) return;
+
+            // Clear with slight trail
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Grid
+            ctx.strokeStyle = '#111';
+            ctx.lineWidth = 0.5;
+            for(let i=0; i<canvas.width; i+=gridSize) {
+                ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,canvas.height); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(canvas.width,i); ctx.stroke();
+            }
+
+            // Particles
+            particles = particles.filter(p => p.life > 0);
+            particles.forEach(p => { p.update(); p.draw(); });
+
+            // Obstacles
+            ctx.fillStyle = '#444';
+            ctx.shadowBlur = 0;
+            obstacles.forEach(obs => {
+                ctx.fillRect(obs.x * gridSize + 2, obs.y * gridSize + 2, gridSize - 4, gridSize - 4);
+            });
+
+            // Food
+            ctx.fillStyle = 'var(--food-red)';
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = 'var(--food-red)';
+            ctx.fillRect(food.x * gridSize + 4, food.y * gridSize + 4, gridSize - 8, gridSize - 8);
+
+            // Golden Food
+            if (goldenFood) {
+                ctx.fillStyle = 'gold';
+                ctx.shadowBlur = 25;
+                ctx.shadowColor = 'gold';
+                ctx.beginPath();
+                ctx.arc(goldenFood.x * gridSize + gridSize/2, goldenFood.y * gridSize + gridSize/2, gridSize/2 - 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Snake
+            snake.forEach((segment, index) => {
+                const isHead = index === 0;
+                ctx.fillStyle = isHead ? (turboMode ? 'var(--turbo-blue)' : 'var(--neon-green)') : 'var(--snake-body)';
+                ctx.shadowBlur = isHead ? 15 : 0;
+                ctx.shadowColor = ctx.fillStyle;
+                
+                // Rounded segments
+                const r = 4;
+                const x = segment.x * gridSize + 1;
+                const y = segment.y * gridSize + 1;
+                const w = gridSize - 2;
+                const h = gridSize - 2;
+                
+                ctx.beginPath();
+                ctx.moveTo(x + r, y);
+                ctx.arcTo(x + w, y, x + w, y + h, r);
+                ctx.arcTo(x + w, y + h, x, y + h, r);
+                ctx.arcTo(x, y + h, x, y, r);
+                ctx.arcTo(x, y, x + w, y, r);
+                ctx.closePath();
+                ctx.fill();
+
+                if (isHead) {
+                    ctx.fillStyle = 'black';
+                    const eyeSize = 3;
+                    if (dy === -1) { // Up
+                        ctx.fillRect(x + 5, y + 5, eyeSize, eyeSize);
+                        ctx.fillRect(x + 12, y + 5, eyeSize, eyeSize);
+                    } else if (dy === 1) { // Down
+                        ctx.fillRect(x + 5, y + 12, eyeSize, eyeSize);
+                        ctx.fillRect(x + 12, y + 12, eyeSize, eyeSize);
+                    } else if (dx === -1) { // Left
+                        ctx.fillRect(x + 5, y + 5, eyeSize, eyeSize);
+                        ctx.fillRect(x + 5, y + 12, eyeSize, eyeSize);
+                    } else { // Right
+                        ctx.fillRect(x + 12, y + 5, eyeSize, eyeSize);
+                        ctx.fillRect(x + 12, y + 12, eyeSize, eyeSize);
+                    }
+                }
+            });
+            ctx.shadowBlur = 0;
+        }
+
+        function moveSnake() {
+            const head = {x: snake[0].x + dx, y: snake[0].y + dy};
+            snake.unshift(head);
+
+            // Check Golden Food
+            if (goldenFood && head.x === goldenFood.x && head.y === goldenFood.y) {
+                score += 50;
+                goldenFood = null;
+                scoreElement.textContent = score;
+                for(let i=0; i<30; i++) {
+                    particles.push(new Particle(head.x * gridSize + gridSize/2, head.y * gridSize + gridSize/2, 'gold'));
+                }
+                activateTurbo();
+            }
+
+            if (head.x === food.x && head.y === food.y) {
+                score += 10;
+                if (turboMode) score += 5;
+                
+                scoreElement.textContent = score;
+                
+                // Create particles
+                for(let i=0; i<15; i++) {
+                    particles.push(new Particle(
+                        food.x * gridSize + gridSize/2, 
+                        food.y * gridSize + gridSize/2, 
+                        'var(--food-red)'
+                    ));
+                }
+
+                spawnFood();
+
+                // Level up / Obstacles
+                if (score % 30 === 0) {
+                    level++;
+                    spawnObstacles();
+                }
+
+                // Chance for Golden Food
+                if (Math.random() < 0.2 && !goldenFood) {
+                    spawnGoldenFood();
+                }
+
+                // Turbo mechanism
+                if (score % 100 === 0) {
+                    activateTurbo();
+                }
+
+                if (!turboMode && speed > 60) {
+                    clearInterval(gameLoop);
+                    speed -= 2;
+                    gameLoop = setInterval(draw, speed);
+                }
+            } else {
+                snake.pop();
+            }
+        }
+
+        function activateTurbo() {
+            turboMode = true;
+            turboIndicator.style.display = 'block';
+            clearInterval(gameLoop);
+            gameLoop = setInterval(draw, 40); // Super fast
+            
+            setTimeout(() => {
+                turboMode = false;
+                turboIndicator.style.display = 'none';
+                clearInterval(gameLoop);
+                gameLoop = setInterval(draw, speed);
+            }, 3000); // 3 seconds of turbo
+        }
+
+        function checkGameOver() {
+            const head = snake[0];
+            const hitWall = head.x < 0 || head.x >= tileCount || head.y < 0 || head.y >= tileCount;
+            const hitSelf = snake.slice(1).some(segment => segment.x === head.x && segment.y === head.y);
+            const hitObstacle = obstacles.some(obs => obs.x === head.x && obs.y === head.y);
+
+            if (hitWall || hitSelf || hitObstacle) {
+                clearInterval(gameLoop);
+                
+                // Update High Score
+                if (score > highScore) {
+                    highScore = score;
+                    localStorage.setItem('nanoclaw_snake_highscore', highScore);
+                    bestScoreElement.textContent = highScore;
+                }
+
+                gameOverScreen.style.display = 'flex';
+                finalScoreElement.textContent = `最终得分: ${score}`;
+                return true;
+            }
+            return false;
+        }
+
+        function changeDirection(e) {
+            const keyPressed = e.key.toLowerCase();
+            const goingUp = dy === -1;
+            const goingDown = dy === 1;
+            const goingRight = dx === 1;
+            const goingLeft = dx === -1;
+
+            if ((keyPressed === 'arrowup' || keyPressed === 'w') && !goingDown) {
+                dx = 0; dy = -1;
+            }
+            if ((keyPressed === 'arrowdown' || keyPressed === 's') && !goingUp) {
+                dx = 0; dy = 1;
+            }
+            if ((keyPressed === 'arrowleft' || keyPressed === 'a') && !goingRight) {
+                dx = -1; dy = 0;
+            }
+            if ((keyPressed === 'arrowright' || keyPressed === 'd') && !goingLeft) {
+                dx = 1; dy = 0;
+            }
+        }
+    </script>
+</body>
+</html>
