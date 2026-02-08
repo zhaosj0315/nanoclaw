@@ -7,11 +7,15 @@ import {
     getInteractionTask, 
     storeGenericMessage, 
     getAllMemories, 
+    updateMemory,
+    deleteMemory,
+    incrementMemoryRefCount,
     getAllTasks, 
     getAllTaskRuns, 
     getAllChats, 
     getRecentMessages, 
-    getAllKV 
+    getAllKV,
+    setKV 
 } from './db.js';
 import { logger } from './logger.js';
 import { DATA_DIR } from './config.js';
@@ -52,10 +56,32 @@ app.get('/media/:filename', (req, res) => {
 });
 
 app.get('/api/memories', (req, res) => res.json(getAllMemories()));
+
+app.put('/api/memories/:id', (req, res) => {
+    const { id } = req.params;
+    const { fact, category, is_pinned } = req.body;
+    updateMemory(parseInt(id), fact, category, !!is_pinned);
+    res.json({ success: true });
+});
+
+app.delete('/api/memories/:id', (req, res) => {
+    deleteMemory(parseInt(req.params.id));
+    res.json({ success: true });
+});
+
 app.get('/api/tasks', (req, res) => res.json({ tasks: getAllTasks(), runs: getAllTaskRuns() }));
 app.get('/api/chats', (req, res) => res.json(getAllChats()));
 app.get('/api/messages/:jid', (req, res) => res.json(getRecentMessages(req.params.jid, parseInt(req.query.limit as string) || 50)));
 app.get('/api/kv', (req, res) => res.json(getAllKV()));
+
+app.put('/api/kv/:key', (req, res) => {
+    const { key } = req.params;
+    const { value } = req.body;
+    // 使用 db.js 中已有的 setLastGroupSync 逻辑类似的 KV 存储逻辑
+    // 这里我直接在 server.ts 引用 db 对象不太优雅，我先在 db.ts 增加一个通用的 setKV
+    setKV(key, value);
+    res.json({ success: true });
+});
 
 app.get('/api/log', (req, res) => {
     try {

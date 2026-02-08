@@ -41,7 +41,7 @@
 
         .intent-mismatch { background-color: rgba(127, 29, 29, 0.1) !important; box-shadow: inset 3px 0 0 0 #ef4444; }
 
-        /* Multi-View Sidebar */
+        /* Navigation Rail */
         .side-nav { position: fixed; left: 0; top: 0; bottom: 0; width: 54px; background: #020617; border-right: 1px solid #1e293b; display: flex; flex-direction: column; align-items: center; padding-top: 1.5rem; gap: 1rem; z-index: 100; }
         .nav-item { width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; border-radius: 10px; cursor: pointer; color: #475569; transition: all 0.2s; position: relative; }
         .nav-item:hover { color: #94a3b8; background: #1e293b; }
@@ -49,22 +49,47 @@
         .nav-tooltip { visibility: hidden; position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 15px; background: #1e293b; color: white; padding: 5px 10px; border-radius: 6px; font-size: 10px; white-space: nowrap; z-index: 200; border: 1px solid #334155; font-weight: 900; }
         .nav-item:hover .nav-tooltip { visibility: visible; }
 
-        .view-content { display: none !important; height: 100vh; width: calc(100vw - 54px); margin-left: 54px; flex-direction: column; }
+        /* Full Screen Views */
+        .view-content { display: none !important; height: 100vh; width: calc(100vw - 54px); margin-left: 54px; flex-direction: column; background-color: #020617; }
         .view-content.active { display: flex !important; }
-        .data-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 1.25rem; }
+        
+        /* Tactical Components */
+        .data-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 1.25rem; transition: all 0.2s; position: relative; }
+        .data-card:hover { border-color: #334155; transform: translateY(-3px); }
+        
+        .memory-card.hot { border-color: #10b981; box-shadow: 0 0 15px rgba(16, 185, 129, 0.2); }
+        .memory-card.pinned { border-color: #f59e0b; border-width: 2px; }
+        .memory-card.cold { opacity: 0.5; }
+
+        .gantt-grid { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; background: #020617; border: 1px solid #1e293b; padding: 4px; border-radius: 8px; }
+        .gantt-cell { height: 40px; background: #0f172a; position: relative; border-right: 1px solid #1e293b/20; }
+        .gantt-bar { position: absolute; height: 10px; border-radius: 5px; opacity: 0.8; transition: all 0.2s; }
+        .gantt-bar:hover { opacity: 1; transform: scaleY(1.5); box-shadow: 0 0 10px white; z-index: 10; }
+
+        .cursor-blink { border-right: 2px solid #10b981; animation: cursor-pulse 0.8s infinite; margin-left: 4px; }
+        @keyframes cursor-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+        .toggle-label { display: flex; align-items: center; cursor: pointer; gap: 8px; }
+        .toggle-box { width: 32px; height: 16px; background: #1e293b; border-radius: 10px; position: relative; transition: background 0.3s; }
+        .toggle-circle { width: 12px; height: 12px; background: #475569; border-radius: 50%; position: absolute; top: 2px; left: 2px; transition: all 0.3s; }
+        input:checked + .toggle-box { background: #064e3b; }
+        input:checked + .toggle-box .toggle-circle { left: 18px; background: #10b981; }
+
+        .anchor-highlight { background-color: rgba(16, 185, 129, 0.1) !important; box-shadow: inset 4px 0 0 0 #10b981; }
+        [contenteditable]:hover { outline: 1px dashed #f59e0b; }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-300 font-mono h-screen flex overflow-hidden">
     <!-- Side Navigation -->
     <nav class="side-nav">
         <div class="nav-item active" onclick="switchView('operations')" id="nav-operations">
-            <span class="text-xl">📡</span><span class="nav-tooltip uppercase tracking-widest">Audit</span>
+            <span class="text-xl">📡</span><span class="nav-tooltip uppercase tracking-widest">Operations</span>
         </div>
         <div class="nav-item" onclick="switchView('knowledge')" id="nav-knowledge">
-            <span class="text-xl">🧠</span><span class="nav-tooltip uppercase tracking-widest">Memory</span>
+            <span class="text-xl">🧠</span><span class="nav-tooltip uppercase tracking-widest">Knowledge</span>
         </div>
         <div class="nav-item" onclick="switchView('automation')" id="nav-automation">
-            <span class="text-xl">⚙️</span><span class="nav-tooltip uppercase tracking-widest">Tasks</span>
+            <span class="text-xl">⚙️</span><span class="nav-tooltip uppercase tracking-widest">Automation</span>
         </div>
         <div class="nav-item" onclick="switchView('comms')" id="nav-comms">
             <span class="text-xl">💬</span><span class="nav-tooltip uppercase tracking-widest">Comms</span>
@@ -74,7 +99,7 @@
         </div>
     </nav>
 
-    <!-- VIEW: OPERATIONS (THE AUDIT TERMINAL) -->
+    <!-- VIEW: OPERATIONS (THE HOME) -->
     <main id="view-operations" class="view-content active p-4">
         <div class="w-full h-full flex flex-col">
             <header class="mb-4 flex justify-between items-center shrink-0 px-2">
@@ -88,12 +113,17 @@
                     </div>
                 </div>
                 <div class="flex items-center gap-6">
+                    <label class="toggle-label">
+                        <span class="text-[9px] font-black text-slate-500 uppercase tracking-widest">Stream_Log</span>
+                        <input type="checkbox" id="stream-toggle" class="hidden" onchange="toggleStream()">
+                        <div class="toggle-box"><div class="toggle-circle"></div></div>
+                    </label>
                     <div id="daily-stats" class="hidden md:flex gap-4 px-4 py-1.5 bg-slate-900/80 rounded border border-slate-800 text-[10px] font-bold tracking-tight">
                         <div class="flex flex-col text-center"><span class="text-slate-500 uppercase font-black">Tasks</span><span id="stat-tasks" class="text-emerald-400 font-mono">-</span></div>
                         <div class="w-px bg-slate-800 self-stretch"></div>
-                        <div class="flex flex-col text-center"><span class="text-slate-500 uppercase font-black">Latency</span><span id="stat-latency" class="text-amber-400 font-mono">-</span></div>
+                        <div class="flex flex-col text-center"><span class="text-slate-500 uppercase font-black">Avg_Latency</span><span id="stat-latency" class="text-amber-400 font-mono">-</span></div>
                         <div class="w-px bg-slate-800 self-stretch"></div>
-                        <div class="flex flex-col text-center"><span class="text-slate-500 uppercase font-black">TPS</span><span id="stat-tps" class="text-rose-400 font-mono">-</span></div>
+                        <div class="flex flex-col text-center"><span class="text-slate-500 uppercase font-black text-[8px]">TPS</span><span id="stat-tps" class="text-rose-400 font-mono">-</span></div>
                     </div>
                     <div id="status-indicator" class="text-[10px] text-slate-600 font-mono tracking-widest uppercase">Initializing...</div>
                 </div>
@@ -128,31 +158,50 @@
     </main>
 
     <!-- VIEW: KNOWLEDGE -->
-    <main id="view-knowledge" class="view-content p-10 overflow-auto">
-        <h2 class="text-3xl font-black text-emerald-500 uppercase mb-8 tracking-tighter">🧠 Knowledge_Base</h2>
+    <main id="view-knowledge" class="view-content p-10 overflow-auto bg-slate-950">
+        <div class="flex justify-between items-center mb-8 border-l-4 border-emerald-500 pl-4">
+            <div>
+                <h2 class="text-3xl font-black text-emerald-500 uppercase">🧠 Knowledge_Base</h2>
+                <p class="text-[10px] text-slate-500 font-bold tracking-widest">SYSTEM-WIDE PERSISTENT CONTEXT & FACTS</p>
+            </div>
+            <div class="flex gap-4">
+                <div class="flex items-center gap-2 bg-slate-900/50 px-3 py-1 rounded border border-slate-800"><div class="w-2 h-2 rounded-full bg-f59e0b"></div><span class="text-[9px] font-black uppercase">Pinned</span></div>
+                <div class="flex items-center gap-2 bg-slate-900/50 px-3 py-1 rounded border border-slate-800"><div class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]"></div><span class="text-[9px] font-black uppercase">Hot</span></div>
+            </div>
+        </div>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="memory-container"></div>
     </main>
 
     <!-- VIEW: AUTOMATION -->
-    <main id="view-automation" class="view-content p-10">
-        <h2 class="text-3xl font-black text-sky-500 uppercase mb-8 tracking-tighter">⚙️ Automation_Grid</h2>
-        <div class="flex flex-col gap-8 h-full overflow-hidden">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 h-1/3 overflow-auto shrink-0" id="task-container"></div>
-            <div class="flex-1 bg-slate-900/30 border border-slate-800 rounded-xl overflow-hidden flex flex-col">
-                <div class="px-4 py-2 bg-slate-950 border-b border-slate-800 font-black text-[10px] uppercase text-slate-500">History</div>
+    <main id="view-automation" class="view-content p-10 bg-slate-950 overflow-hidden">
+        <h2 class="text-3xl font-black text-sky-500 uppercase mb-8 border-l-4 border-sky-500 pl-4 tracking-tighter">⚙️ Automation_Grid</h2>
+        <div class="flex-1 flex flex-col gap-8 overflow-hidden">
+            <!-- Stability Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 shrink-0" id="task-container"></div>
+            
+            <!-- 24H Gantt -->
+            <div class="shrink-0 bg-slate-900/30 p-6 rounded-xl border border-slate-800/50">
+                <div class="flex justify-between mb-4 text-[10px] font-black uppercase tracking-widest text-slate-500"><span>24H_Execution_Gantt</span><span>Load_Distribution</span></div>
+                <div class="gantt-grid" id="gantt-container"></div>
+                <div class="flex justify-between mt-2 px-1 text-[8px] text-slate-700 font-bold">${Array.from({length:24}).map((_,i)=>`<span>${i}h</span>`).join('')}</div>
+            </div>
+
+            <!-- Trace History -->
+            <div class="flex-1 bg-slate-900/20 border border-slate-800 rounded-xl overflow-hidden flex flex-col">
+                <div class="px-4 py-2 bg-slate-950 border-b border-slate-800 font-black text-[10px] uppercase text-slate-500">Trace_History</div>
                 <div class="flex-1 overflow-auto" id="task-runs-container"></div>
             </div>
         </div>
     </main>
 
     <!-- VIEW: COMMS -->
-    <main id="view-comms" class="view-content">
+    <main id="view-comms" class="view-content bg-slate-950">
         <div class="flex flex-row h-full">
             <div class="w-80 border-r border-slate-900 bg-slate-950/50 flex flex-col shrink-0">
-                <div class="p-4 border-b border-slate-900 font-black text-[10px] uppercase text-slate-500">Sessions</div>
+                <div class="p-4 border-b border-slate-900 font-black text-[10px] uppercase text-slate-500 tracking-widest">Active_Nodes</div>
                 <div class="flex-1 overflow-auto" id="chat-list"></div>
             </div>
-            <div class="flex-1 flex flex-col bg-slate-900/10">
+            <div class="flex-1 flex flex-col">
                 <div id="active-chat-header" class="px-8 py-6 border-b border-slate-900 bg-slate-950/80"></div>
                 <div class="flex-1 overflow-auto p-10 space-y-6" id="message-container"></div>
             </div>
@@ -160,17 +209,23 @@
     </main>
 
     <!-- VIEW: SYSTEM -->
-    <main id="view-system" class="view-content p-10 overflow-auto">
-        <h2 class="text-3xl font-black text-slate-500 uppercase mb-8 tracking-tighter">🛠️ System_Registry</h2>
-        <div class="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden">
-            <table class="w-full text-left font-mono"><tbody id="kv-container" class="divide-y divide-slate-800/50"></tbody></table>
+    <main id="view-system" class="view-content p-10 overflow-auto bg-slate-950">
+        <div class="flex justify-between items-center mb-8 border-l-4 border-slate-700 pl-4">
+            <h2 class="text-3xl font-black text-slate-500 uppercase">🛠️ System_Registry</h2>
+            <span class="text-[9px] font-black bg-emerald-950/30 text-emerald-500 px-3 py-1 rounded border border-emerald-500/20 uppercase">Live_Edit_Enabled</span>
+        </div>
+        <div class="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
+            <table class="w-full text-left font-mono">
+                <thead class="bg-slate-950 text-slate-500 uppercase text-[10px] font-black"><tr><th class="px-8 py-4">Registry_Key</th><th class="px-8 py-4">Assigned_Value</th></tr></thead>
+                <tbody id="kv-container" class="divide-y divide-slate-800/50"></tbody>
+            </table>
         </div>
     </main>
 
     <div id="drawer" class="drawer">
-        <div class="p-4 border-b border-slate-800 flex justify-between bg-slate-950 items-center">
+        <div class="p-4 border-b border-slate-800 flex justify-between bg-slate-950 items-center shadow-lg">
             <h2 class="text-sm font-black uppercase text-emerald-500" id="drawer-title">Metadata</h2>
-            <button onclick="closeDrawer()">✕ CLOSE</button>
+            <button onclick="closeDrawer()" class="text-slate-500 hover:text-white transition-colors">✕ CLOSE</button>
         </div>
         <div id="drawer-content" class="flex-1 overflow-auto p-8"></div>
     </div>
@@ -189,19 +244,26 @@
         let lastData = { log: [], stats: null, total: 0 };
         let currentPage = 1;
         let currentActiveView = 'operations';
+        let streamTimer = null;
 
-        function switchView(viewName) {
+        function toggleStream() {
+            const isEnabled = document.getElementById('stream-toggle').checked;
+            clearInterval(streamTimer);
+            if (isEnabled) { streamTimer = setInterval(fetchLog, 800); statusIndicator.textContent = 'STREAMING_ACTIVE'; }
+            else { streamTimer = setInterval(fetchLog, 3000); statusIndicator.textContent = 'SYNCED'; }
+        }
+
+        function switchView(viewName, anchorKey = null) {
             currentActiveView = viewName;
             document.querySelectorAll('.view-content').forEach(v => v.classList.remove('active'));
             document.querySelectorAll('.nav-item').forEach(v => v.classList.remove('active'));
-            const targetView = document.getElementById(`view-${viewName}`);
-            const targetNav = document.getElementById(`nav-${viewName}`);
-            if (targetView) targetView.classList.add('active');
-            if (targetNav) targetNav.classList.add('active');
+            document.getElementById(`view-${viewName}`).classList.add('active');
+            document.getElementById(`nav-${viewName}`).classList.add('active');
+            
             if (viewName === 'knowledge') fetchMemories();
             else if (viewName === 'automation') fetchAutomation();
             else if (viewName === 'comms') fetchChats();
-            else if (viewName === 'system') fetchKV();
+            else if (viewName === 'system') fetchKV(anchorKey);
             else if (viewName === 'operations') fetchLog();
         }
 
@@ -223,7 +285,6 @@
                 }
                 document.getElementById('current-page-num').textContent = currentPage;
                 document.getElementById('total-records-count').textContent = lastData.total;
-                statusIndicator.textContent = `SYNCED: ${new Date().toLocaleTimeString()}`;
             } catch (e) { statusIndicator.innerHTML = `<span class="text-red-500">OFFLINE</span>`; }
         }
 
@@ -231,20 +292,15 @@
             const query = searchBox.value.toLowerCase();
             logBody.innerHTML = lastData.log.filter(t => t.content.toLowerCase().includes(query)).map(t => {
                 const hasWarning = t.status === 'RESOLVED' && checkIntentWarning(t.content, t.responses);
-                const intentTag = `<span class="intent-tag tag-${(t.intent_category || 'GENERAL').toLowerCase()} mt-1 block w-fit">${t.intent_category || 'GEN'}</span>`;
+                const isStreaming = t.status === 'PENDING' && document.getElementById('stream-toggle').checked;
                 return `<tr class="hover:bg-slate-800/40 group transition-colors ${hasWarning ? 'intent-mismatch' : ''}">
-                    <td class="px-3 py-3 align-top">
-                        <div class="flex flex-col">
-                            <span class="text-slate-600 font-bold text-[10px]">${formatTime(t.created_at)}</span>
-                            <span class="text-[8px] text-slate-700 font-mono mt-1 cursor-pointer hover:text-emerald-500" onclick="openTaskInspector('${t.id}')">#${t.id.slice(0,8)}</span>
-                        </div>
-                    </td>
+                    <td class="px-3 py-3 align-top"><div class="flex flex-col"><span class="text-slate-600 font-bold text-[10px]">${formatTime(t.created_at)}</span><span class="text-[8px] text-slate-700 font-mono mt-1 cursor-pointer hover:text-emerald-500" onclick="openTaskInspector('${t.id}')">#${t.id.slice(0,8)}</span></div></td>
                     <td class="px-3 py-3 align-top">${getStatusBadge(t.status, hasWarning, t.id)}</td>
                     <td class="px-3 py-3 align-top">${getDurationBadge(t.duration_ms, t.token_usage, hasWarning, t.telemetry)}</td>
                     <td class="px-3 py-3 align-top">${renderSession(t.session_id)}</td>
-                    <td class="px-3 py-3 align-top font-mono text-[10px] text-slate-500">${t.origin_ip || 'LOCAL'}${intentTag}</td>
+                    <td class="px-3 py-3 align-top font-mono text-[10px] text-slate-500">${t.origin_ip || 'LOCAL'}</td>
                     <td class="px-3 py-3 align-top text-slate-300 w-[20%] text-[11px]">${renderQuestion(t.content)}</td>
-                    <td class="px-3 py-3 align-top w-[60%]">${renderResponses(t.responses, t.attachments, t.id, t.created_at)}</td>
+                    <td class="px-3 py-3 align-top w-[60%]">${renderResponses(t.responses, t.attachments, t.id, t.created_at, isStreaming)}</td>
                 </tr>`;
             }).join('');
         }
@@ -252,43 +308,103 @@
         async function fetchMemories() {
             const res = await fetch('/api/memories');
             const data = await res.json();
-            document.getElementById('memory-container').innerHTML = data.map(m => `<div class="data-card border-l-4 border-emerald-500"><div class="flex justify-between mb-2 text-[10px] font-black uppercase text-slate-500"><span>${m.category}</span><span>${formatTime(m.created_at)}</span></div><p class="text-sm italic text-slate-200">"${m.fact}"</p></div>`).join('');
+            data.sort((a, b) => (b.is_pinned - a.is_pinned) || new Date(b.created_at) - new Date(a.created_at));
+            document.getElementById('memory-container').innerHTML = data.map(m => {
+                const isHot = m.ref_count > 10;
+                const cardClass = `memory-card data-card ${m.is_pinned ? 'pinned' : ''} ${isHot ? 'hot' : ''}`;
+                return `<div class="${cardClass}">
+                    <div class="flex justify-between mb-3 text-[9px] font-black uppercase text-slate-500">
+                        <span class="bg-emerald-950/50 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/20">${m.category}</span>
+                        <div class="flex gap-2"><span>${m.ref_count} REFS</span><span>${formatTime(m.created_at)}</span></div>
+                    </div>
+                    ${m.is_pinned ? '<div class="text-[8px] text-amber-500 font-black uppercase mb-2">📌 Core_Directive</div>' : ''}
+                    <p class="text-[13px] italic text-slate-200 outline-none leading-relaxed font-serif" contenteditable="true" onblur="updateMemoryFact(${m.id}, this)">"${m.fact}"</p>
+                    <div class="mt-4 flex justify-between opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div class="flex gap-3">
+                            <button onclick="switchView('comms'); fetchMessages('${m.chat_jid}', '${m.chat_jid}')" class="text-[9px] text-sky-500 font-bold hover:text-white">溯源 🔍</button>
+                            <button onclick="togglePin(${m.id}, '${m.fact}', '${m.category}', ${m.is_pinned})" class="text-[9px] ${m.is_pinned ? 'text-amber-500' : 'text-slate-600'} font-bold">置顶</button>
+                        </div>
+                        <button onclick="deleteMemory(${m.id})" class="text-[9px] text-rose-600 font-bold">回收</button>
+                    </div>
+                </div>`;
+            }).join('');
         }
 
         async function fetchAutomation() {
             const res = await fetch('/api/tasks');
             const data = await res.json();
-            document.getElementById('task-container').innerHTML = data.tasks.map(t => `<div class="data-card border-l-4 border-sky-500"><div class="flex justify-between mb-2 font-black uppercase text-[10px]"><span class="${t.status === 'active' ? 'text-emerald-400' : 'text-slate-600'}">${t.status}</span><span>${t.schedule_type}</span></div><div class="text-[11px] text-slate-400 font-bold truncate">${t.id}</div><p class="text-xs text-slate-500 italic mt-2">"${t.prompt}"</p></div>`).join('');
-            document.getElementById('task-runs-container').innerHTML = `<table class="w-full text-[10px] divide-y divide-slate-800/50">${data.runs.map(r => `<tr><td class="px-4 py-2 font-mono">${formatTime(r.run_at)}</td><td class="px-4 py-2 text-slate-500">#${r.task_id.slice(0,8)}</td><td class="px-4 py-2 font-black ${r.status === 'success' ? 'text-emerald-400' : 'text-rose-500'}">${r.status}</td><td class="px-4 py-2 truncate">${r.result || r.error}</td></tr>`).join('')}</table>`;
+            const { tasks, runs } = data;
+            
+            document.getElementById('task-container').innerHTML = tasks.map(t => {
+                const taskRuns = runs.filter(r => r.task_id === t.id).slice(0, 10);
+                const successRate = (taskRuns.filter(r => r.status === 'success').length / Math.max(1, taskRuns.length) * 100).toFixed(0);
+                return `<div class="data-card border-l-4 ${successRate > 90 ? 'border-emerald-500' : 'border-rose-500'}">
+                    <div class="flex justify-between mb-3 text-[9px] font-black">
+                        <span class="text-slate-500 uppercase">${t.status}</span>
+                        <span class="${successRate > 90 ? 'text-emerald-500' : 'text-rose-500'} animate-pulse">${successRate}% STABLE</span>
+                    </div>
+                    <div class="text-[11px] font-bold text-slate-300 truncate">${t.id}</div>
+                    <p class="text-xs text-slate-500 italic mt-2 line-clamp-2">"${t.prompt}"</p>
+                </div>`;
+            }).join('');
+
+            const ganttContainer = document.getElementById('gantt-container');
+            ganttContainer.innerHTML = Array.from({length: 24}).map((_, h) => {
+                const hourRuns = runs.filter(r => new Date(r.run_at).getHours() === h);
+                return `<div class="gantt-cell">
+                    ${hourRuns.map(r => {
+                        const m = new Date(r.run_at).getMinutes();
+                        const color = r.status === 'success' ? 'bg-sky-500' : 'bg-rose-500';
+                        return `<div class="gantt-bar ${color} w-1" style="left: ${(m/60)*100}%" title="${r.task_id}"></div>`;
+                    }).join('')}
+                </div>`;
+            }).join('');
+
+            document.getElementById('task-runs-container').innerHTML = `<table class="w-full text-[10px] divide-y divide-slate-800/50">
+                <thead class="bg-slate-950 text-slate-600 uppercase text-[8px] font-black sticky top-0"><tr><th class="p-2 text-left">Timestamp</th><th class="p-2 text-left">Task</th><th class="p-2 text-left">Status</th><th class="p-2 text-left">Trace</th></tr></thead>
+                <tbody>${runs.map(r => `<tr><td class="p-2 font-mono text-slate-500">${formatTime(r.run_at)}</td><td class="p-2 text-slate-400">#${r.task_id.slice(0,8)}</td><td class="p-2 font-black ${r.status === 'success' ? 'text-emerald-500' : 'text-rose-500'}">${r.status.toUpperCase()}</td><td class="p-2 truncate max-w-lg text-slate-500">${r.result || r.error}</td></tr>`).join('')}</tbody>
+            </table>`;
         }
 
         async function fetchChats() {
             const res = await fetch('/api/chats');
             const data = await res.json();
-            document.getElementById('chat-list').innerHTML = data.map(c => `<div class="p-5 border-b border-slate-900 hover:bg-slate-900/50 cursor-pointer" onclick="fetchMessages('${c.jid}', '${c.name || c.jid}')"><div class="flex justify-between text-xs font-bold text-slate-300"><span>${c.name || 'Node'}</span><span class="text-[8px] text-slate-600">${formatTime(c.last_message_time)}</span></div><div class="text-[9px] text-slate-600 font-mono truncate mt-1">${c.jid}</div></div>`).join('');
+            document.getElementById('chat-list').innerHTML = data.map(c => `
+                <div class="p-5 border-b border-slate-900 hover:bg-slate-900/50 cursor-pointer group" onclick="fetchMessages('${c.jid}', '${c.name || c.jid}')">
+                    <div class="flex justify-between text-xs font-bold text-slate-300">
+                        <div class="flex items-center gap-2"><span>${c.jid.includes('@s.whatsapp') ? '📱' : '🐦'}</span><span>${c.name || 'Unknown'}</span></div>
+                        <span class="text-[8px] text-slate-600">${formatTime(c.last_message_time)}</span>
+                    </div>
+                    <div class="mt-2 flex gap-0.5 h-1 w-full bg-slate-900 rounded-full overflow-hidden">
+                        ${Array.from({length:12}).map(()=>`<div class="flex-1 bg-indigo-500/${Math.random() > 0.5 ? '40' : '10'}"></div>`).join('')}
+                    </div>
+                </div>`).join('');
         }
 
         async function fetchMessages(jid, name) {
-            document.getElementById('active-chat-header').innerHTML = `<div class="text-sm font-bold text-emerald-500 uppercase">${name}</div>`;
+            document.getElementById('active-chat-header').innerHTML = `<div class="flex items-center justify-between w-full"><div class="text-sm font-bold text-emerald-500 uppercase">${name}</div><button onclick="switchView('operations')" class="text-[9px] bg-slate-900 px-2 py-1 rounded border border-slate-800 hover:text-white">AUDIT_LOG 📡</button></div>`;
             const res = await fetch(`/api/messages/${encodeURIComponent(jid)}`);
             const data = await res.json();
-            document.getElementById('message-container').innerHTML = data.map(m => `<div class="flex ${m.from_me ? 'justify-end' : 'justify-start'}"><div class="max-w-[75%] ${m.from_me ? 'bg-emerald-950/20 border-emerald-900/50' : 'bg-slate-900 border-slate-800'} border p-4 rounded-xl text-sm text-slate-300">${m.content}<div class="text-[8px] text-slate-600 mt-2 text-right">${formatTime(m.timestamp)}</div></div></div>`).join('');
+            document.getElementById('message-container').innerHTML = data.map(m => `<div class="flex ${m.from_me ? 'justify-end' : 'justify-start'}"><div class="max-w-[75%] ${m.from_me ? 'bg-emerald-950/20 border-emerald-900/50' : 'bg-slate-900 border-slate-800'} border p-4 rounded-2xl text-sm text-slate-300 relative group">${m.content}<div class="text-[8px] text-slate-600 mt-2 text-right">${formatTime(m.timestamp)}</div></div></div>`).join('');
+            document.getElementById('message-container').scrollTop = document.getElementById('message-container').scrollHeight;
         }
 
-        async function fetchKV() {
+        async function fetchKV(anchorKey = null) {
             const res = await fetch('/api/kv');
             const data = await res.json();
-            document.getElementById('kv-container').innerHTML = data.map(kv => `<tr><td class="px-8 py-4 font-black text-slate-500 uppercase text-xs">${kv.key}</td><td class="px-8 py-4 text-emerald-500 font-bold">${kv.value}</td></tr>`).join('');
+            document.getElementById('kv-container').innerHTML = data.map(kv => `<tr class="hover:bg-slate-900/30 transition-colors ${anchorKey === kv.key ? 'anchor-highlight' : ''}" id="kv-row-${kv.key}"><td class="px-8 py-4 font-black text-slate-500 uppercase text-xs">${kv.key}</td><td class="px-8 py-4 text-emerald-500 font-bold outline-none" contenteditable="true" onblur="updateKV('${kv.key}', this)">${kv.value}</td></tr>`).join('');
+            if (anchorKey) document.getElementById(`kv-row-${anchorKey}`)?.scrollIntoView({ behavior: 'smooth' });
         }
+
+        async function updateKV(key, el) { await fetch(`/api/kv/${encodeURIComponent(key)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: el.innerText }) }); statusIndicator.textContent = 'REGISTRY_UPDATED'; }
+        async function updateMemoryFact(id, el) { await fetch(`/api/memories/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fact: el.innerText.replace(/^"|"$/g, '') }) }); statusIndicator.textContent = 'MEMORY_UPDATED'; }
+        async function togglePin(id, fact, cat, pin) { await fetch(`/api/memories/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fact, category: cat, is_pinned: !pin }) }); fetchMemories(); }
+        async function deleteMemory(id) { if (confirm('RECYCLE?')) { await fetch(`/api/memories/${id}`, { method: 'DELETE' }); fetchMemories(); } }
 
         function formatTime(iso) { return new Date(iso).toLocaleTimeString('zh-CN', { hour12: false }); }
         function closeDrawer() { drawer.classList.remove('open'); }
         function changePage(delta) { currentPage = Math.max(1, currentPage + delta); fetchLog(); }
-
-        function checkIntentWarning(q, r) {
-            if (!INTENT_KEYWORDS.some(kw => q.toLowerCase().includes(kw))) return false;
-            return !r || !r.some(res => ACTION_TYPES.includes(res.type));
-        }
+        function checkIntentWarning(q, r) { if (!INTENT_KEYWORDS.some(kw => q.toLowerCase().includes(kw))) return false; return !r || !r.some(res => ACTION_TYPES.includes(res.type)); }
 
         function getStatusBadge(s, w, id) {
             let cls = s === 'PENDING' ? 'bg-amber-950/50 text-amber-400 border-amber-800/50' : (w ? 'bg-red-950 text-white border-red-500 animate-pulse' : 'bg-emerald-950/50 text-emerald-400 border-emerald-800/50');
@@ -297,48 +413,33 @@
 
         function getDurationBadge(ms, usage, w, tel) {
             if (!ms) return '-';
-            let bar = ''; if (usage && usage.total > 0) { const p = (usage.prompt/usage.total)*100; bar = `<div class="flex w-full h-1 bg-slate-800 rounded-full mt-1 overflow-hidden"><div class="bg-emerald-500 h-full" style="width: ${p}%"></div><div class="bg-blue-500 h-full" style="width: ${100-p}%"></div></div>`; }
-            return `<div class="flex flex-col cursor-help w-full" onclick="openPerformanceWaterfall('${btoa(JSON.stringify(tel))}', ${ms})"><span class="text-[11px] font-bold ${ms > 15000 ? 'text-amber-400' : 'text-emerald-400'}">${(ms/1000).toFixed(1)}s</span><span class="text-[8px] text-slate-600 mt-0.5">${usage ? (usage.total/1000).toFixed(1)+'k' : '-'} tok</span>${bar}</div>`;
+            let bar = ''; if (usage && usage.total > 0) { const p = (usage.prompt/usage.total)*100; bar = `<div class="flex w-full h-1 bg-slate-800 rounded-full mt-1 overflow-hidden cursor-pointer hover:ring-1 ring-white/30" title="穿透至注册表" onclick="switchView('system', 'LAST_GROUP_SYNC')"><div class="bg-emerald-500 h-full" style="width: ${p}%"></div><div class="bg-blue-500 h-full" style="width: ${100-p}%"></div></div>`; }
+            return `<div class="flex flex-col w-full"><span class="text-[11px] font-bold ${ms > 15000 ? 'text-amber-400' : 'text-emerald-400'} cursor-help" onclick="openPerformanceWaterfall('${btoa(JSON.stringify(tel))}', ${ms})">${(ms/1000).toFixed(1)}s</span><span class="text-[8px] text-slate-600 mt-0.5">${usage ? (usage.total/1000).toFixed(1)+'k' : '-'} tok</span>${bar}</div>`;
         }
 
-        function renderResponses(rs, att, pid, st) {
-            if (!rs || rs.length === 0) return '<span class="text-slate-700 italic text-[10px]">Thinking...</span>';
+        function renderResponses(rs, att, pid, st, isStreaming) {
+            if ((!rs || rs.length === 0) && !isStreaming) return '<span class="text-slate-700 italic text-[10px]">Thinking...</span>';
             const bt = new Date(st).getTime();
-            return `<div class="space-y-1">${rs.map(r => {
+            let html = `<div class="space-y-1">${rs.map(r => {
                 const d = ((new Date(r.created_at).getTime() - bt) / 1000).toFixed(1);
                 let b = r.content.startsWith('[Status]') ? 'STEP' : (r.type === 'Image' ? 'VISUAL' : (r.type === 'File' ? 'FILE' : (r.type === 'Audio' ? 'VOICE' : '')));
                 let c = r.content.startsWith('[Status]') ? r.content.replace('[Status]', '').trim() : r.content;
-                return `<div class="flex justify-between items-start gap-2 group/node"><div class="text-[11px] text-slate-400 line-clamp-1 hover:line-clamp-none cursor-pointer flex-1">${b ? `<span class="text-[8px] bg-slate-800 px-1 rounded mr-1">${b}</span>` : ''}<span>${c}</span></div><span class="text-[8px] text-slate-700 opacity-0 group-hover/node:opacity-100 font-mono">+${d}s</span></div>`;
-            }).join('')}</div>`;
+                return `<div class="flex justify-between items-start gap-2 group/node"><div class="text-[11px] text-slate-400 line-clamp-1 hover:line-clamp-none cursor-pointer flex-1">${b ? `<span class="text-[8px] bg-slate-800 px-1 rounded mr-1">${b}</span>` : ''}<span>${c}</span></div><span class="text-[8px] text-slate-700 opacity-0 group-hover/node:opacity-100 transition-opacity font-mono">+${d}s</span></div>`;
+            }).join('')}`;
+            if (isStreaming) html += `<div class="text-emerald-500 text-[11px] flex items-center gap-1 italic">Thinking... <span class="cursor-blink">▋</span></div>`;
+            return html + '</div>';
         }
 
-        function renderQuestion(q) {
-            if (!q) return '';
-            let s = q.replace(/</g, '&lt;');
-            s = s.replace(/\[IMAGE: (.*?)\]/g, '<span class="bg-purple-950/50 text-purple-400 text-[8px] px-1 rounded border border-purple-500/30 mr-1">IMG</span>');
-            return s;
-        }
-
+        function renderQuestion(q) { if (!q) return ''; return q.replace(/</g, '&lt;').replace(/\[IMAGE: (.*?)\]/g, '<span class="bg-purple-950/50 text-purple-400 text-[8px] px-1 rounded border border-purple-500/30 mr-1">IMG</span>'); }
         function renderSession(sid) { return `<div class="text-[11px] font-bold text-sky-400 truncate cursor-pointer hover:underline" onclick="switchView('comms'); fetchMessages('${sid}', '${sid}')">${sid.slice(0,4)}...${sid.slice(-4)}</div>`; }
 
         function openPerformanceWaterfall(b, t) {
+            if (!b || b === 'bnVsbA==') return;
             const tel = JSON.parse(atob(b));
             drawerTitle.textContent = '性能细分';
             const p = (v) => ((v/t)*100).toFixed(1)+'%';
             drawerContent.innerHTML = `<div class="bg-slate-900 p-6 rounded-xl border border-slate-800"><div class="flex justify-between text-[10px] font-black mb-4 uppercase"><span>Timeline</span><span>${(t/1000).toFixed(2)}s</span></div><div class="flex h-6 bg-slate-950 rounded-full overflow-hidden border border-slate-800 p-1 gap-1"><div class="perf-pre h-full" style="width: ${p(tel.pre)}"></div><div class="perf-llm h-full" style="width: ${p(tel.llm)}"></div><div class="perf-post h-full" style="width: ${p(tel.post)}"></div></div><div class="grid grid-cols-3 mt-6 text-[10px]"><div class="border-l border-emerald-500/30 pl-2">预处理<div>${(tel.pre/1000).toFixed(2)}s</div></div><div class="border-l border-blue-500/30 pl-2">模型推理<div>${(tel.llm/1000).toFixed(2)}s</div></div><div class="border-l border-amber-500/30 pl-2">工具执行<div>${(tel.post/1000).toFixed(2)}s</div></div></div></div>`;
             drawer.classList.add('open');
-        }
-
-        async function triggerFix(id, btn) {
-            btn.innerHTML = 'FIXING...';
-            await fetch('/api/fix', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
-            statusIndicator.textContent = 'RECOVERY_INJECTED';
-        }
-
-        async function retryTask(id, btn) {
-            btn.innerHTML = 'RE-RUN...';
-            await fetch('/api/retry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
-            statusIndicator.textContent = 'TASK_REQUEUED';
         }
 
         function openTaskInspector(id) {

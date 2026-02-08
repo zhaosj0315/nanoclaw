@@ -118,9 +118,20 @@ export function initDatabase() {
       chat_jid TEXT,
       fact TEXT,
       category TEXT,
+      ref_count INTEGER DEFAULT 0,
+      is_pinned INTEGER DEFAULT 0,
       created_at DATETIME
     );
   `);
+}
+
+export function updateMemory(id: number, fact: string, category: string, isPinned: boolean) {
+  db.prepare('UPDATE memories SET fact = ?, category = ?, is_pinned = ? WHERE id = ?')
+    .run(fact, category, isPinned ? 1 : 0, id);
+}
+
+export function incrementMemoryRefCount(id: number) {
+  db.prepare('UPDATE memories SET ref_count = ref_count + 1 WHERE id = ?').run(id);
 }
 
 export function storeMemory(chatJid: string, fact: string, category: string = 'general') {
@@ -353,12 +364,17 @@ export function getAllMemories() {
   return db.prepare('SELECT * FROM memories ORDER BY created_at DESC').all() as any[];
 }
 
-export function getAllTaskRuns(limit = 50) {
+export function getAllTaskRuns(limit = 200) {
   return db.prepare('SELECT * FROM task_runs ORDER BY run_at DESC LIMIT ?').all(limit) as any[];
 }
 
 export function getAllKV() {
   return db.prepare('SELECT * FROM kv_store').all() as { key: string; value: string }[];
+}
+
+export function setKV(key: string, value: string) {
+  db.prepare('INSERT INTO kv_store (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+    .run(key, value);
 }
 
 export function getDailyStats() {
