@@ -165,17 +165,80 @@
                 <p class="text-[10px] text-slate-500 font-bold tracking-widest">SYSTEM-WIDE PERSISTENT CONTEXT & FACTS</p>
             </div>
             <div class="flex gap-4">
+                <button onclick="showAddMemoryForm()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1 rounded text-[10px] font-black uppercase tracking-widest transition-all">Add_Memory +</button>
                 <div class="flex items-center gap-2 bg-slate-900/50 px-3 py-1 rounded border border-slate-800"><div class="w-2 h-2 rounded-full bg-f59e0b"></div><span class="text-[9px] font-black uppercase">Pinned</span></div>
                 <div class="flex items-center gap-2 bg-slate-900/50 px-3 py-1 rounded border border-slate-800"><div class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]"></div><span class="text-[9px] font-black uppercase">Hot</span></div>
             </div>
         </div>
+
+        <!-- Add Memory Form (Hidden by default) -->
+        <div id="memory-form-container" class="hidden mb-8 bg-slate-900 p-6 rounded-xl border border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.1)]">
+            <h3 class="text-xs font-black text-emerald-500 uppercase mb-4 tracking-widest">New_Memory_Entry</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="flex flex-col gap-2">
+                    <label class="text-[9px] text-slate-500 uppercase font-bold">Fact / Information</label>
+                    <textarea id="new-memory-fact" class="bg-slate-950 border border-slate-800 rounded p-3 text-sm focus:outline-none focus:border-emerald-500 min-h-[100px]" placeholder="Enter fact here..."></textarea>
+                </div>
+                <div class="flex flex-col gap-4">
+                    <div class="flex flex-col gap-2">
+                        <label class="text-[9px] text-slate-500 uppercase font-bold">Category</label>
+                        <input type="text" id="new-memory-category" class="bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:outline-none focus:border-emerald-500" placeholder="e.g. general, preference, contact">
+                    </div>
+                    <div class="flex justify-end gap-3 mt-auto">
+                        <button onclick="hideAddMemoryForm()" class="px-4 py-2 text-[10px] font-bold text-slate-500 hover:text-white uppercase">Cancel</button>
+                        <button onclick="submitNewMemory()" class="bg-emerald-600 hover:bg-emerald-700 px-6 py-2 rounded text-[10px] font-black uppercase text-white shadow-lg shadow-emerald-900/20">Commit_Memory</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="memory-container"></div>
     </main>
 
     <!-- VIEW: AUTOMATION -->
     <main id="view-automation" class="view-content p-10 bg-slate-950 overflow-hidden">
-        <h2 class="text-3xl font-black text-sky-500 uppercase mb-8 border-l-4 border-sky-500 pl-4 tracking-tighter">⚙️ Automation_Grid</h2>
+        <div class="flex justify-between items-center mb-8 border-l-4 border-sky-500 pl-4 tracking-tighter">
+            <h2 class="text-3xl font-black text-sky-500 uppercase">⚙️ Automation_Grid</h2>
+            <button onclick="showAddTaskForm()" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-1 rounded text-[10px] font-black uppercase tracking-widest transition-all">New_Task +</button>
+        </div>
+        
         <div class="flex-1 flex flex-col gap-8 overflow-hidden">
+            <!-- Add Task Form (Hidden) -->
+            <div id="task-form-container" class="hidden shrink-0 bg-slate-900 p-6 rounded-xl border border-sky-500/30 shadow-[0_0_20px_rgba(14,165,233,0.1)] mb-4">
+                <h3 class="text-xs font-black text-sky-500 uppercase mb-4 tracking-widest">Register_New_Task</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="space-y-4">
+                        <div class="flex flex-col gap-2">
+                            <label class="text-[9px] text-slate-500 uppercase font-bold">Task_ID (Unique)</label>
+                            <input type="text" id="new-task-id" class="bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-sky-400 focus:outline-none focus:border-sky-500" placeholder="e.g. gdp-monitor">
+                        </div>
+                        <div class="flex flex-col gap-2">
+                            <label class="text-[9px] text-slate-500 uppercase font-bold">Command_Prompt</label>
+                            <textarea id="new-task-prompt" class="bg-slate-950 border border-slate-800 rounded p-3 text-sm focus:outline-none focus:border-sky-500 min-h-[80px]" placeholder="[SHELL: python3 ...]"></textarea>
+                        </div>
+                    </div>
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="flex flex-col gap-2">
+                                <label class="text-[9px] text-slate-500 uppercase font-bold">Schedule_Type</label>
+                                <select id="new-task-type" class="bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:outline-none focus:border-sky-500">
+                                    <option value="cron">CRON (Linux style)</option>
+                                    <option value="interval">INTERVAL (Seconds)</option>
+                                </select>
+                            </div>
+                            <div class="flex flex-col gap-2">
+                                <label class="text-[9px] text-slate-500 uppercase font-bold">Schedule_Value</label>
+                                <input type="text" id="new-task-value" class="bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:outline-none focus:border-sky-500" placeholder="0 17 * * * / 3600">
+                            </div>
+                        </div>
+                        <div class="flex justify-end gap-3 pt-6">
+                            <button onclick="hideAddTaskForm()" class="px-4 py-2 text-[10px] font-bold text-slate-500 hover:text-white uppercase">Cancel</button>
+                            <button onclick="submitNewTask()" class="bg-sky-600 hover:bg-sky-700 px-6 py-2 rounded text-[10px] font-black uppercase text-white">Deploy_Automation</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Stability Cards -->
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 shrink-0" id="task-container"></div>
             
@@ -337,14 +400,19 @@
             
             document.getElementById('task-container').innerHTML = tasks.map(t => {
                 const taskRuns = runs.filter(r => r.task_id === t.id).slice(0, 10);
-                const successRate = (taskRuns.filter(r => r.status === 'success').length / Math.max(1, taskRuns.length) * 100).toFixed(0);
-                return `<div class="data-card border-l-4 ${successRate > 90 ? 'border-emerald-500' : 'border-rose-500'}">
+                const hasRuns = taskRuns.length > 0;
+                const successRate = hasRuns ? (taskRuns.filter(r => r.status === 'success').length / taskRuns.length * 100).toFixed(0) : null;
+                const stabilityText = hasRuns ? `${successRate}% STABLE` : 'WAITING_FIRST_RUN';
+                const borderColor = !hasRuns ? 'border-slate-700' : (successRate > 90 ? 'border-emerald-500' : 'border-rose-500');
+                
+                return `<div class="data-card border-l-4 ${borderColor} cursor-pointer hover:bg-slate-900/50" onclick="openAutomationTaskInspector('${t.id}')">
                     <div class="flex justify-between mb-3 text-[9px] font-black">
                         <span class="text-slate-500 uppercase">${t.status}</span>
-                        <span class="${successRate > 90 ? 'text-emerald-500' : 'text-rose-500'} animate-pulse">${successRate}% STABLE</span>
+                        <span class="${!hasRuns ? 'text-slate-600' : (successRate > 90 ? 'text-emerald-500' : 'text-rose-500')} animate-pulse">${stabilityText}</span>
                     </div>
                     <div class="text-[11px] font-bold text-slate-300 truncate">${t.id}</div>
                     <p class="text-xs text-slate-500 italic mt-2 line-clamp-2">"${t.prompt}"</p>
+                    <div class="mt-3 text-[8px] text-slate-600 font-bold uppercase tracking-tighter">NEXT_RUN: ${t.next_run ? formatDateTime(t.next_run) : 'MANUAL_ONLY'}</div>
                 </div>`;
             }).join('');
 
@@ -355,14 +423,14 @@
                     ${hourRuns.map(r => {
                         const m = new Date(r.run_at).getMinutes();
                         const color = r.status === 'success' ? 'bg-sky-500' : 'bg-rose-500';
-                        return `<div class="gantt-bar ${color} w-1" style="left: ${(m/60)*100}%" title="${r.task_id}"></div>`;
+                        return `<div class="gantt-bar ${color} w-1" style="left: ${(m/60)*100}%" title="${r.task_id} @ ${formatDateTime(r.run_at)}"></div>`;
                     }).join('')}
                 </div>`;
             }).join('');
 
             document.getElementById('task-runs-container').innerHTML = `<table class="w-full text-[10px] divide-y divide-slate-800/50">
                 <thead class="bg-slate-950 text-slate-600 uppercase text-[8px] font-black sticky top-0"><tr><th class="p-2 text-left">Timestamp</th><th class="p-2 text-left">Task</th><th class="p-2 text-left">Status</th><th class="p-2 text-left">Trace</th></tr></thead>
-                <tbody>${runs.map(r => `<tr><td class="p-2 font-mono text-slate-500">${formatTime(r.run_at)}</td><td class="p-2 text-slate-400">#${r.task_id.slice(0,8)}</td><td class="p-2 font-black ${r.status === 'success' ? 'text-emerald-500' : 'text-rose-500'}">${r.status.toUpperCase()}</td><td class="p-2 truncate max-w-lg text-slate-500">${r.result || r.error}</td></tr>`).join('')}</tbody>
+                <tbody>${runs.map(r => `<tr><td class="p-2 font-mono text-slate-500">${formatDateTime(r.run_at)}</td><td class="p-2 text-slate-400">#${r.task_id.slice(0,8)}</td><td class="p-2 font-black ${r.status === 'success' ? 'text-emerald-500' : 'text-rose-500'}">${r.status.toUpperCase()}</td><td class="p-2 truncate max-w-lg text-slate-500">${r.result || r.error}</td></tr>`).join('')}</tbody>
             </table>`;
         }
 
@@ -397,11 +465,35 @@
         }
 
         async function updateKV(key, el) { await fetch(`/api/kv/${encodeURIComponent(key)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: el.innerText }) }); statusIndicator.textContent = 'REGISTRY_UPDATED'; }
+        
+        function showAddMemoryForm() { document.getElementById('memory-form-container').classList.remove('hidden'); }
+        function hideAddMemoryForm() { document.getElementById('memory-form-container').classList.add('hidden'); }
+        async function submitNewMemory() {
+            const fact = document.getElementById('new-memory-fact').value;
+            const category = document.getElementById('new-memory-category').value || 'general';
+            if (!fact) return alert('FACT_REQUIRED');
+            await fetch('/api/memories', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fact, category })
+            });
+            document.getElementById('new-memory-fact').value = '';
+            hideAddMemoryForm();
+            fetchMemories();
+            statusIndicator.textContent = 'MEMORY_STORED';
+        }
+
         async function updateMemoryFact(id, el) { await fetch(`/api/memories/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fact: el.innerText.replace(/^"|"$/g, '') }) }); statusIndicator.textContent = 'MEMORY_UPDATED'; }
         async function togglePin(id, fact, cat, pin) { await fetch(`/api/memories/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fact, category: cat, is_pinned: !pin }) }); fetchMemories(); }
         async function deleteMemory(id) { if (confirm('RECYCLE?')) { await fetch(`/api/memories/${id}`, { method: 'DELETE' }); fetchMemories(); } }
 
         function formatTime(iso) { return new Date(iso).toLocaleTimeString('zh-CN', { hour12: false }); }
+        function formatDateTime(iso) { 
+            const d = new Date(iso);
+            const date = (d.getMonth() + 1).toString().padStart(2, '0') + '-' + d.getDate().toString().padStart(2, '0');
+            const time = d.toLocaleTimeString('zh-CN', { hour12: false });
+            return `${date} ${time}`;
+        }
         function closeDrawer() { drawer.classList.remove('open'); }
         function changePage(delta) { currentPage = Math.max(1, currentPage + delta); fetchLog(); }
         function checkIntentWarning(q, r) { if (!INTENT_KEYWORDS.some(kw => q.toLowerCase().includes(kw))) return false; return !r || !r.some(res => ACTION_TYPES.includes(res.type)); }
@@ -446,6 +538,109 @@
             const t = lastData.log.find(x => x.id === id);
             drawerTitle.textContent = `Inspector: ${id.slice(0,8)}`;
             drawerContent.innerHTML = `<div class="space-y-6"><section><h3 class="text-[10px] text-slate-500 uppercase font-black border-l-2 border-emerald-500 pl-2 mb-2">Payload</h3><div class="bg-slate-950 p-4 rounded border border-slate-800 font-mono text-xs whitespace-pre-wrap">${t.content}</div></section><section><h3 class="text-[10px] text-slate-500 uppercase font-black border-l-2 border-blue-500 pl-2 mb-2">Usage</h3><div class="grid grid-cols-3 gap-2">${['prompt','completion','total'].map(k => `<div class="bg-slate-900 p-3 rounded border border-slate-800 text-center"><div class="text-[8px] text-slate-600 uppercase">${k}</div><div class="text-sm font-bold text-slate-300">${t.token_usage?.[k] || 0}</div></div>`).join('')}</div></section></div>`;
+            drawer.classList.add('open');
+        }
+
+        function showAddTaskForm() { document.getElementById('task-form-container').classList.remove('hidden'); }
+        function hideAddTaskForm() { document.getElementById('task-form-container').classList.add('hidden'); }
+        async function submitNewTask() {
+            const id = document.getElementById('new-task-id').value;
+            const prompt = document.getElementById('new-task-prompt').value;
+            const schedule_type = document.getElementById('new-task-type').value;
+            const schedule_value = document.getElementById('new-task-value').value;
+            if (!prompt || !schedule_value) return alert('FIELDS_REQUIRED');
+            await fetch('/api/tasks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, prompt, schedule_type, schedule_value })
+            });
+            hideAddTaskForm();
+            fetchAutomation();
+            statusIndicator.textContent = 'TASK_DEPLOYED';
+        }
+
+        async function updateTaskStatus(id, newStatus) {
+            await fetch(`/api/tasks/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: newStatus })
+            });
+            fetchAutomation();
+            openAutomationTaskInspector(id); // Refresh drawer
+        }
+
+        async function updateTaskConfig(id, updates) {
+            // Clean up quotes if user left them in prompt
+            if (updates.prompt) updates.prompt = updates.prompt.replace(/^"|"$/g, '');
+            
+            await fetch(`/api/tasks/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updates)
+            });
+            statusIndicator.textContent = 'TASK_CONFIG_UPDATED';
+            fetchAutomation();
+        }
+
+        async function deleteTask(id) {
+            if (confirm(`DELETE_TASK: ${id}?`)) {
+                await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+                closeDrawer();
+                fetchAutomation();
+            }
+        }
+
+        async function openAutomationTaskInspector(id) {
+            const res = await fetch('/api/tasks');
+            const { tasks, runs } = await res.json();
+            const t = tasks.find(x => x.id === id);
+            if (!t) return;
+            const taskRuns = runs.filter(r => r.task_id === id);
+
+            drawerTitle.textContent = `Automation_Inspector: ${id.slice(0,8)}`;
+            drawerContent.innerHTML = `
+                <div class="space-y-8">
+                    <section>
+                        <div class="flex justify-between items-center mb-4 border-l-2 border-sky-500 pl-2">
+                            <h3 class="text-[10px] text-slate-500 uppercase font-black">Task_Configuration</h3>
+                            <div class="flex gap-2">
+                                <button onclick="updateTaskStatus('${t.id}', '${t.status === 'active' ? 'paused' : 'active'}')" class="text-[8px] font-black px-2 py-1 rounded border ${t.status === 'active' ? 'border-amber-500 text-amber-500' : 'border-emerald-500 text-emerald-500'} uppercase">${t.status === 'active' ? 'Pause' : 'Resume'}</button>
+                                <button onclick="deleteTask('${t.id}')" class="text-[8px] font-black px-2 py-1 rounded border border-rose-500 text-rose-500 uppercase">Delete</button>
+                            </div>
+                        </div>
+                        <div class="bg-slate-900/50 p-4 rounded-xl border border-slate-800 space-y-4">
+                            <div>
+                                <div class="text-[8px] text-slate-600 uppercase font-black mb-1">Command_Prompt (Click to Edit)</div>
+                                <div class="text-sm italic text-slate-300 outline-none border-b border-transparent focus:border-sky-500/50 pb-1" contenteditable="true" onblur="updateTaskConfig('${t.id}', { prompt: this.innerText })">"${t.prompt}"</div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <div class="text-[8px] text-slate-600 uppercase font-black mb-1">Schedule (${t.schedule_type})</div>
+                                    <div class="text-xs font-mono text-sky-400 outline-none border-b border-transparent focus:border-sky-500/50" contenteditable="true" onblur="updateTaskConfig('${t.id}', { schedule_value: this.innerText })">${t.schedule_value}</div>
+                                </div>
+                                <div><div class="text-[8px] text-slate-600 uppercase font-black mb-1">Status</div><div class="text-xs font-mono ${t.status === 'active' ? 'text-emerald-500' : 'text-amber-500'}">${t.status.toUpperCase()}</div></div>
+                            </div>
+                        </div>
+                    </section>
+                    <section>
+                        <h3 class="text-[10px] text-slate-500 uppercase font-black border-l-2 border-amber-500 pl-2 mb-4">Execution_History</h3>
+                        <div class="space-y-2">
+                            ${taskRuns.length > 0 ? taskRuns.map(r => `
+                                <div class="bg-slate-900/30 p-3 rounded border border-slate-800 flex justify-between items-center">
+                                    <div class="flex flex-col">
+                                        <span class="text-[10px] font-mono text-slate-400">${formatDateTime(r.run_at)}</span>
+                                        <span class="text-[9px] text-slate-600 uppercase font-black">${r.duration_ms ? (r.duration_ms/1000).toFixed(1)+'s' : '-'} Duration</span>
+                                    </div>
+                                    <div class="flex items-center gap-3">
+                                        <span class="text-[9px] font-black ${r.status === 'success' ? 'text-emerald-500' : 'text-rose-500'}">${r.status.toUpperCase()}</span>
+                                        <button onclick="alert('${(r.result || r.error || 'NO_TRACE').replace(/'/g, "\\'")}')" class="text-slate-700 hover:text-white text-xs">🔍</button>
+                                    </div>
+                                </div>
+                            `).join('') : '<div class="text-center py-8 text-slate-700 text-[10px] uppercase font-black tracking-widest border border-dashed border-slate-800 rounded-xl">No_Execution_Logs_Found</div>'}
+                        </div>
+                    </section>
+                </div>
+            `;
             drawer.classList.add('open');
         }
 

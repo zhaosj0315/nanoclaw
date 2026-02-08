@@ -9,8 +9,12 @@ import {
     getAllMemories, 
     updateMemory,
     deleteMemory,
+    storeMemory,
     incrementMemoryRefCount,
     getAllTasks, 
+    createTask,
+    updateTask,
+    deleteTask,
     getAllTaskRuns, 
     getAllChats, 
     getRecentMessages, 
@@ -57,6 +61,12 @@ app.get('/media/:filename', (req, res) => {
 
 app.get('/api/memories', (req, res) => res.json(getAllMemories()));
 
+app.post('/api/memories', (req, res) => {
+    const { fact, category, chat_jid } = req.body;
+    storeMemory(chat_jid || 'system', fact, category || 'general');
+    res.json({ success: true });
+});
+
 app.put('/api/memories/:id', (req, res) => {
     const { id } = req.params;
     const { fact, category, is_pinned } = req.body;
@@ -70,8 +80,36 @@ app.delete('/api/memories/:id', (req, res) => {
 });
 
 app.get('/api/tasks', (req, res) => res.json({ tasks: getAllTasks(), runs: getAllTaskRuns() }));
+
+app.post('/api/tasks', (req, res) => {
+    const { id, prompt, schedule_type, schedule_value, context_mode } = req.body;
+    createTask({
+        id: id || `task-${Date.now()}`,
+        group_folder: 'main',
+        chat_jid: '8617600663150@s.whatsapp.net',
+        prompt,
+        schedule_type,
+        schedule_value,
+        context_mode: context_mode || 'group',
+        next_run: new Date().toISOString(),
+        status: 'active',
+        created_at: new Date().toISOString()
+    });
+    res.json({ success: true });
+});
+
+app.put('/api/tasks/:id', (req, res) => {
+    updateTask(req.params.id, req.body);
+    res.json({ success: true });
+});
+
+app.delete('/api/tasks/:id', (req, res) => {
+    deleteTask(req.params.id);
+    res.json({ success: true });
+});
+
 app.get('/api/chats', (req, res) => res.json(getAllChats()));
-app.get('/api/messages/:jid', (req, res) => res.json(getRecentMessages(req.params.jid, parseInt(req.query.limit as string) || 50)));
+app.get('/api/messages/:jid', (req, res) => res.json(getRecentMessages(req.params.jid, parseInt(req.query.limit as string) || 500)));
 app.get('/api/kv', (req, res) => res.json(getAllKV()));
 
 app.put('/api/kv/:key', (req, res) => {
