@@ -124,9 +124,10 @@ app.put('/api/kv/:key', (req, res) => {
 app.get('/api/log', (req, res) => {
     try {
         const page = parseInt(req.query.page as string) || 1;
-        const limit = parseInt(req.query.limit as string) || 20;
+        const limit = parseInt(req.query.limit as string) || 50;
+        const search = req.query.search as string;
         const offset = (page - 1) * limit;
-        const { tasks, total } = getInteractionLog(limit, offset);
+        const { tasks, total } = getInteractionLog(limit, offset, search);
         const stats = getDailyStats() || { total_tasks: 0, total_tokens: 0, avg_duration: 0 };
         const categoryStats = tasks.reduce((acc: any, t: any) => {
             const cat = t.intent_category || 'GENERAL';

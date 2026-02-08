@@ -216,7 +216,7 @@ export function getRecentMessages(chatJid: string, limit: number) {
   return db.prepare(`
     SELECT * FROM (
       SELECT * FROM messages 
-      WHERE chat_jid = ? 
+      WHERE chat_jid = ? AND content != '' AND content IS NOT NULL
       ORDER BY timestamp DESC 
       LIMIT ?
     ) ORDER BY timestamp ASC
@@ -345,9 +345,17 @@ export function getInteractionTask(id: string): InteractionTask | undefined {
   return db.prepare('SELECT * FROM interaction_tasks WHERE id = ?').get(id) as any;
 }
 
-export function getInteractionLog(limit = 20, offset = 0) {
-  const { total } = db.prepare('SELECT COUNT(*) as total FROM interaction_tasks').get() as { total: number };
-  const tasks = db.prepare(`SELECT * FROM interaction_tasks ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(limit, offset) as any[];
+export function getInteractionLog(limit = 20, offset = 0, search?: string) {
+  let whereClause = '';
+  const params: any[] = [];
+  
+  if (search) {
+    whereClause = ' WHERE content LIKE ? ';
+    params.push(`%${search}%`);
+  }
+
+  const { total } = db.prepare(`SELECT COUNT(*) as total FROM interaction_tasks ${whereClause}`).get(...params) as { total: number };
+  const tasks = db.prepare(`SELECT * FROM interaction_tasks ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...params, limit, offset) as any[];
   
   const result = tasks.map(t => ({
     ...t,
