@@ -1,0 +1,14 @@
+graph TD
+    A[用户指令] --> B{物理状态检查}
+    B -->|需要观察| C[执行 SHELL/ls/cat]
+    C --> D[获取 OBSERVATION]
+    D --> E[思维同步 PROGRESS]
+    B -->|已有上下文| E
+    E --> F{安全审计}
+    F -->|高风险操作| G[触发 REQUIRE_APPROVAL]
+    G --> H[等待授权]
+    H -->|已授权| I[执行核心逻辑]
+    F -->|低风险操作| I
+    I --> J[结果汇总]
+    J --> K[生成结构化报告]
+    K --> L[多模态输出 TTS/FILE]
