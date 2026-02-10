@@ -336,12 +336,15 @@ async function processMessage(msg: any): Promise<void> {
 
   const mediaDir = path.join(DATA_DIR, 'media');
 
-  // 关键修复：允许处理 from_me 消息（支持私聊），但严格排除助手发出的内容
-  if (msg.from_me && (msg.content.startsWith('🐾') || msg.content.startsWith('📦') || msg.content.startsWith(`${ASSISTANT_NAME}:`))) {
-    return;
-  }
-
+  // 关键修复：允许处理 from_me 消息（支持私聊），但严格排除助手发出的各类反馈内容
   const content = (msg.content || '').trim();
+  const isBotResponse = msg.from_me && (
+    content.startsWith('🧠') || 
+    content.startsWith('🐾') || 
+    content.startsWith('📦') || 
+    content.startsWith(`${ASSISTANT_NAME}:`)
+  );
+  if (isBotResponse) return;
 
   // --- 关键修复：空消息过滤 ---
   let hasAttachments = false;
@@ -679,6 +682,30 @@ async function runAgent(
       const postStart = Date.now();
       // 检查是否有工具调用
       const { results, commands } = await executeTools(responseText);
+
+      // --- [里程碑设计落地] 逻辑分步：仅在有分析动作时发送进度气泡 ---
+      if (commands.length > 0) {
+        // 剥离所有工具标签，只保留纯文字思考
+        const reasoning = responseText
+          .replace(/\[SHELL:\s*([\s\S]+?)\]/g, '')
+          .replace(/\[WRITE:\s*([\s\S]+?)\]/g, '')
+          .replace(/\[SEND_FILE:\s*([\s\S]+?)\]/g, '')
+          .replace(/\[SEARCH_KNOWLEDGE:\s*([\s\S]+?)\]/g, '')
+          .replace(/\[LIST_KNOWLEDGE\]/g, '')
+          .replace(/\[TTS_SEND:\s*([\s\S]+?)\]/g, '')
+          .trim();
+
+        if (reasoning && reasoning.length > 2) {
+          // 打印到终端用于审计
+          console.log(`\n\x1b[35m[MILESTONE] 发送进度气泡:\x1b[0m ${reasoning}\n`);
+          
+          // 发送到 WhatsApp
+          await sendMessage(chatJid, `🧠 *正在分析中 (第 ${iterations} 步):*\n${reasoning}`, { quoted: quotedMsg });
+          
+          // 给 WhatsApp 一点呼吸时间，确保消息顺序
+          await new Promise(r => setTimeout(r, 800));
+        }
+      }
 
       // --- 增强终端可见性：展示工具执行结果 ---
       if (commands.length > 0) {
