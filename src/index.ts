@@ -632,15 +632,17 @@ async function runAgent(
     try {
       const preStart = Date.now();
       // 构造媒体文件清单，帮助模型建立视觉/听觉数据与文件名的 1:1 映射
-      const mediaManifest = mediaFiles.map((f, i) => `[附件 ${i + 1}] 名称: ${path.basename(f)} (绝对路径: ${f})`).join('\n');
+      // 过滤掉音频文件，因为 Gemini API 目前在 function-calling 上下文中不支持 audio/ogg
+      const supportedMediaFiles = mediaFiles.filter(f => !f.toLowerCase().endsWith('.ogg') && !f.toLowerCase().endsWith('.mp3'));
+      const mediaManifest = supportedMediaFiles.map((f, i) => `[附件 ${i + 1}] 名称: ${path.basename(f)} (绝对路径: ${f})`).join('\n');
       
       // 构造“当前任务焦点”，明确告诉 AI 哪张图是刚才发的，必须优先处理
       const currentFocus = currentAttachments.length > 0
         ? `【当前交互焦点：全新上传文件】\n用户刚刚上传了以下文件，请务必针对这些文件进行分析：\n${currentAttachments.map(f => `- ${path.basename(f)} (${f})`).join('\n')}\n注意：如果这些文件的内容与之前的对话历史（如系统报告）存在冲突，请以这些文件的实时视觉内容为准！`
         : '';
 
-      const multimodalSystemInstruction = mediaFiles.length > 0 
-        ? `【全链路附件清单】\n你当前载入了 ${mediaFiles.length} 个媒体文件作为背景上下文：\n${mediaManifest}\n\n${currentFocus}\n\n请结合清单中的文件名与视觉数据，根据下方的用户指令进行处理。`
+      const multimodalSystemInstruction = supportedMediaFiles.length > 0 
+        ? `【全链路附件清单】\n你当前载入了 ${supportedMediaFiles.length} 个媒体文件作为背景上下文：\n${mediaManifest}\n\n${currentFocus}\n\n请结合清单中的文件名与视觉数据，根据下方的用户指令进行处理。`
         : '';
 
       const finalPrompt = multimodalSystemInstruction 
@@ -649,7 +651,7 @@ async function runAgent(
       telemetry.pre += (Date.now() - preStart);
 
       const llmStart = Date.now();
-      const result = await runLocalGemini(finalPrompt, group.name, mediaFiles);
+      const result = await runLocalGemini(finalPrompt, group.name, supportedMediaFiles);
       telemetry.llm += (Date.now() - llmStart);
 
       if (!result.success || !result.response) {
@@ -667,11 +669,33 @@ async function runAgent(
       }
 
       const responseText = result.response;
-      logger.info({ iterations, responseText }, 'Gemini thinking process');
+      
+      // --- 增强终端可见性：打印思考过程 ---
+      console.log(`\n\x1b[35m[Iteration ${iterations}] 🧠 ${ASSISTANT_NAME} 的思考过程:\x1b[0m`);
+      console.log(`\x1b[90m${'-'.repeat(50)}\x1b[0m`);
+      console.log(responseText);
+      console.log(`\x1b[90m${'-'.repeat(50)}\x1b[0m\n`);
       
       const postStart = Date.now();
       // 检查是否有工具调用
       const { results, commands } = await executeTools(responseText);
+
+      // --- 增强终端可见性：展示工具执行结果 ---
+      if (commands.length > 0) {
+        console.log(`\x1b[36m[Iteration ${iterations}] 🛠️ 执行了 ${commands.length} 个工具调用:\x1b[0m`);
+        commands.forEach((cmd: any, idx: number) => {
+          console.log(`  ${idx + 1}. \x1b[33m[${cmd.type.toUpperCase()}]\x1b[0m ${cmd.command || cmd.path || cmd.query || ''}`);
+        });
+        
+        if (results.length > 0) {
+          console.log(`\x1b[32m[Iteration ${iterations}] ✅ 工具执行反馈预览:\x1b[0m`);
+          results.forEach((res, idx) => {
+            const preview = res.output.length > 300 ? res.output.slice(0, 300) + '...' : res.output;
+            console.log(`  - \x1b[90m结果 ${idx + 1}:\x1b[0m ${res.success ? '成功' : '失败'}`);
+            console.log(`    \x1b[90m内容:\x1b[0m ${preview}`);
+          });
+        }
+      }
 
       // --- 关键增强：处理中间指令 (特别是 SEND_FILE, TTS_SEND, SHOW_MENU) ---
       let menuShown = false;

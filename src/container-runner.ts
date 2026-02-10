@@ -62,6 +62,26 @@ function buildVolumeMounts(
   const homeDir = getHomeDir();
   const projectRoot = process.cwd();
 
+  // Skills directory - shared by all groups
+  const skillsDir = path.join(projectRoot, '.claude', 'skills');
+  if (fs.existsSync(skillsDir)) {
+    mounts.push({
+      hostPath: skillsDir,
+      containerPath: '/workspace/skills',
+      readonly: !isMain, // Main gets read-write for skills management
+    });
+  }
+
+  // Global skills directory (universal path used by npx skills)
+  const globalSkillsDir = path.join(homeDir, '.agents', 'skills');
+  if (fs.existsSync(globalSkillsDir)) {
+    mounts.push({
+      hostPath: globalSkillsDir,
+      containerPath: '/workspace/global-skills',
+      readonly: true, // Always read-only for security
+    });
+  }
+
   if (isMain) {
     // Main gets the entire project root mounted
     mounts.push({

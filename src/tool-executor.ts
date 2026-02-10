@@ -277,16 +277,21 @@ async function ingestFileToKnowledgeBase(sourcePath: string): Promise<ToolResult
 function runShell(command: string): Promise<ToolResult> {
   return new Promise((resolve) => {
     // 限制在项目根目录下执行
+    console.log(`\n\x1b[90m[SHELL RUNNING]\x1b[0m ${command}`);
     exec(command, { cwd: process.cwd() }, (error, stdout, stderr) => {
       if (error) {
+        console.log(`\x1b[31m[SHELL ERROR]\x1b[0m ${error.message}`);
         resolve({
           success: false,
           output: `Error: ${error.message}\nStderr: ${stderr}`,
         });
       } else {
+        const output = stdout || '(Success, no output)';
+        const preview = output.length > 500 ? output.slice(0, 500) + '...' : output;
+        console.log(`\x1b[32m[SHELL OUTPUT]\x1b[0m ${preview}`);
         resolve({
           success: true,
-          output: stdout || '(Success, no output)',
+          output: output,
         });
       }
     });
@@ -299,14 +304,17 @@ async function writeFile(
 ): Promise<ToolResult> {
   try {
     const fullPath = path.resolve(process.cwd(), filePath);
+    console.log(`\n\x1b[90m[FILE WRITE]\x1b[0m ${filePath}`);
     // 确保目录存在
     fs.mkdirSync(path.dirname(fullPath), { recursive: true });
     fs.writeFileSync(fullPath, content);
+    console.log(`\x1b[32m[WRITE SUCCESS]\x1b[0m ${content.length} bytes`);
     return {
       success: true,
       output: `Successfully wrote to ${filePath}`,
     };
   } catch (err: any) {
+    console.log(`\x1b[31m[WRITE FAILED]\x1b[0m ${err.message}`);
     return {
       success: false,
       output: `Failed to write file: ${err.message}`,

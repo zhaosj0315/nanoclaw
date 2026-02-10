@@ -41,10 +41,23 @@ export async function runLocalGemini(
 
     const fullPrompt = systemPrompt + prompt;
 
+    // FIX: Filter media files to only include supported multimodal formats.
+    // The API currently has issues with audio/ogg in certain context/function-calling flows.
+    // We only pass images as direct multimodal attachments for now.
+    const supportedExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.pdf'];
+    const filteredMediaFiles = mediaFiles.filter(file => {
+      const ext = file.toLowerCase().slice(file.lastIndexOf('.'));
+      const isSupported = supportedExtensions.includes(ext);
+      if (!isSupported) {
+        logger.warn({ file, ext }, 'Filtering out unsupported media format from Gemini CLI arguments');
+      }
+      return isSupported;
+    });
+
     // REFACTOR: Pass fullPrompt as the FIRST positional argument, followed by media files.
     // This mimics the standard `gemini "prompt" image.jpg` usage which is proven to work for multimodal.
     // We stop using stdin for the prompt to ensure the CLI treats it as the primary instruction linked to the media.
-    const args = ['--output-format', 'text', '--approval-mode', 'yolo', fullPrompt, ...mediaFiles];
+    const args = ['--output-format', 'text', '--approval-mode', 'yolo', fullPrompt, ...filteredMediaFiles];
 
     logger.debug({ args: args.map(a => a.length > 50 ? a.substring(0, 20) + '...' : a) }, 'Executing gemini CLI command via ARGS');
 
